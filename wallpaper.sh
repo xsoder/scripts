@@ -8,7 +8,7 @@ INTERVAL=1800
 
 # Command to set wallpaper (e.g., feh, nitrogen, etc.)
 # Replace `feh` with the appropriate command for your system
-SET_WALLPAPER_CMD="feh --bg-scale"
+SET_WALLPAPER_CMD=""
 
 # Ensure the wallpaper directory exists
 if [ ! -d "$WALLPAPER_DIR" ]; then

@@ -111,7 +111,7 @@ void displayMessage();
 
 #endif
 EOL
-    cat > src/.header.c << EOL
+    cat > src/header.c << EOL
 #include "header.h"
 
     void displayMessage(){
