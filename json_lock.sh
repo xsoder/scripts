@@ -15,7 +15,7 @@ track_changes() {
     echo "$log_data" > "$OUTPUT_FILE"
 }
 # Create a post-commit hook
-echo -e "#!/bin/bash\n\n$(declare -f track_changes)\n\ntrack_changes_after_commit() {\n    local changed_files=(\$(git diff --name-only HEAD^ HEAD))\n    if [ \${#changed_files[@]} -gt 0 ]; then\n        track_changes \"\${changed_files[@]}\"\n    fi\n}\n\ntrack_changes_after_commit" > .git/hooks/post-commit
+echo -e "#!/bin/bash\n\n$(declare -f track_changes)\n\ntrack_changes_after_commit() {\n    local changed_files=(\$(git diff --name-only HEAD^ HEAD))\n    if [ \${#changed_files[@]} -gt 0 ]; then\n        track_changes \"\${changed_files[@]}\"\n    fi\n}\n\ntrack_changes_after_commit" > post-commit
 # Make the post-commit hook executable
-chmod +x .git/hooks/post-commit
-echo "Post-commit hook created. Changes will be tracked automatically after each commit."
+chmod +x post-commit
+echo "Post-commit hook created. You'll need to move this to .git/hooks/ to activate it."
