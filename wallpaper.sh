@@ -1,6 +1,6 @@
 #!/bin/bash
 
-WALLPAPER_DIR="$HOME/Pictures/wallpapers"
+WALLPAPER_DIR="$HOME/wallpaper/wallpapers"
 
 INTERVAL=1800
 
