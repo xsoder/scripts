@@ -17,6 +17,9 @@ create_project() {
     cat > .gitignore <<EOL
 # Ignore build files
 /build/
+build/
+test/
+/test/
 
 # Ignore CMake cache and temp files
 CMakeCache.txt
@@ -24,6 +27,7 @@ CMakeFiles/
 Makefile
 *.cmake
 *.swp
+.clangd
 
 # Ignore IDE specific files
 .idea/
@@ -38,7 +42,7 @@ To build the project, follow these steps:
 3. Run the following commands:
    mkdir build
    cd build
-   cmake ..
+   cmake 
    make
 4. Run the executable:
    ./$PROJECT_NAME
