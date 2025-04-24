@@ -31,4 +31,4 @@ git push
 # Done message
 echo -e "${GREEN}Done!${RESET} ${BOLD}Press any key to exit.${RESET}"
 read -n 1 -s
-
+clear
