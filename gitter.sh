@@ -18,7 +18,7 @@ CURRENT_BRANCH=$(git branch --show-current)
 
 # Prompt for commit message
 echo -e "${YELLOW}Enter your Git commit message:${RESET}"
-read -p "> " COMMIT
+read -p "❯ " COMMIT
 
 # Git commands with feedback
 echo -e "${CYAN}Staging all changes...${RESET}"
