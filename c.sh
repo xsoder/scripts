@@ -1,6 +1,5 @@
 #!/bin/bash
 
-
 create_project() {
     read -p "Enter your project name: " PROJECT_NAME
 
@@ -42,7 +41,7 @@ To build the project, follow these steps:
 3. Run the following commands:
    mkdir build
    cd build
-   cmake 
+   cmake
    make
 4. Run the executable:
    ./$PROJECT_NAME
