@@ -32,7 +32,7 @@ echo -e "${YELLOW}Available branches:${RESET}"
 git branch | sed 's/^..//' | nl
 
 echo -e "${YELLOW}Enter the number of the branch you want to push to (default is current branch: ${BOLD}$CURRENT_BRANCH${RESET}${YELLOW}):${RESET}"
-read -p "> " BRANCH_NUM
+read -p "❯ " BRANCH_NUM
 
 if [ -n "$BRANCH_NUM" ]; then
     SELECTED_BRANCH=$(git branch | sed 's/^..//' | sed -n "${BRANCH_NUM}p")
