@@ -37,7 +37,7 @@ select_session_and_preview() {
         exit 1
     fi
 
-    selected_session=$(echo "$sessions" | fzf --ansi --prompt="Select a session: " --height=10 --border --reverse)
+    selected_session=$(echo "$sessions" | fzf --ansi --prompt="Select a session: " --height=10 --reverse)
 
     if [[ -n "$selected_session" ]]; then
         preview_windows "$selected_session"
@@ -50,17 +50,14 @@ select_session_and_preview() {
 
 # Main interactive menu
 main() {
-    # Get the list of tmux sessions
     sessions=$(tmux list-sessions -F '#{session_name}' 2>/dev/null)
     if [[ -z "$sessions" ]]; then
         echo "No tmux sessions found. Exiting."
         exit 0
     fi
 
-    # Select a session and preview its windows
     select_session_and_preview
 }
 
-# Run the main function
 main
 
