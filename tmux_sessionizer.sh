@@ -16,7 +16,7 @@ if [[ $# -eq 1 ]]; then
     selected="$1"
 else
     selected=$(find ~/  ~/dopi ~/Programming/ ~/devenv -mindepth 1 -maxdepth 1 -type d | \
-    fzf --height=15 --layout=reverse --border --prompt="Select project ❯ ")
+    fzf --prompt="Select project:")
 
 fi
 
