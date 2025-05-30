@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Reload polybar, dmenu, alacritty, neofetch, starship colors after pywal
+
+# Reload Polybar (change your bar name if needed)
+polybar-msg cmd restart >/dev/null 2>&1
+
+# Reload Xresources for dmenu if you use it (or recompile dmenu with new colors)
+xrdb ~/.Xresources
+
+# Reload Alacritty config (alacritty reads config on start)
+# You can restart Alacritty or send SIGUSR1 if your setup supports live reload
+# Here we'll just restart all running Alacritty terminals:
+pkill -USR1 alacritty
+
+# Reload Neofetch config/colors by forcing it to redraw
+# For terminal neofetch, just clear and run it manually
+# Or you can create an alias/script that calls neofetch to refresh colors
+
+# Reload starship prompt (it reads config on new shell launch)
+# You can reload starship in running terminals by sourcing its config or restarting shells
+# For safety, here we just print a message to restart terminal for colors to update
+echo "Restart your terminal to see updated starship prompt colors."
+
+# You can add any other commands to reload programs here
+
