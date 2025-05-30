@@ -19,33 +19,31 @@ if [ ! -f "$TODO_FILE" ]; then
   } > "$TODO_FILE"
 fi
 
-# Launch Alacritty as a floating window in i3
-alacritty \
-  --class "todo_popup" \
-  --title "TodoPopup" \
-  -e bash -c "nvim '$TODO_FILE'" &
+# Launch Ghostty and capture its PID
+ghostty -e bash -lc "cd ~/notes && nvim '$TODO_FILE'" >/dev/null 2>&1 &
+GHOSTTY_PID=$!
 
-# Wait for the window to appear
-sleep 0.5
-
-# Get the window ID
-WIN_ID=$(xdotool search --class "todo_popup" | tail -1)
+# Wait for the window to appear and be associated with the PID
+for _ in {1..20}; do
+  WIN_ID=$(xdotool search --pid "$GHOSTTY_PID" 2>/dev/null | tail -1)
+  if [ -n "$WIN_ID" ]; then break; fi
+  sleep 0.2
+done
 
 if [ -z "$WIN_ID" ]; then
-  echo "Error: Could not find window!" >&2
+  echo "Error: Could not find Ghostty window for PID $GHOSTTY_PID" >&2
   exit 1
 fi
 
-# Make it floating and set properties in i3
+# Float, resize, and move the window using i3
 i3-msg "[id=$WIN_ID] floating enable"
 i3-msg "[id=$WIN_ID] resize set $WIDTH $HEIGHT"
 
-# Calculate position (top-right corner)
-SCREEN_WIDTH=$(xdotool getdisplaygeometry | awk '{print $1}')
-X_POS=$((SCREEN_WIDTH - WIDTH ))  # 10px padding from the right edge
-Y_POS=0  # 30px padding from the top
+# Calculate top-right position
+read SCREEN_WIDTH SCREEN_HEIGHT < <(xdotool getdisplaygeometry)
+X_POS=$((SCREEN_WIDTH - WIDTH))  # 10px padding
+Y_POS=0
 
 i3-msg "[id=$WIN_ID] move position $X_POS $Y_POS"
-
-# Focus the window (optional)
 i3-msg "[id=$WIN_ID] focus"
+
