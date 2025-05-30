@@ -11,33 +11,41 @@ TODO_FILE="$NOTES_DIR/todo-$TODAY.md"
 # Ensure the notes directory exists
 mkdir -p "$NOTES_DIR"
 
-# Check if file exists before
+# Create file with template if it doesn't exist
 if [ ! -f "$TODO_FILE" ]; then
-  # Create file and add template content
   {
     echo "# Todo"
     echo "# Completed"
   } > "$TODO_FILE"
 fi
 
-# Calculate X and Y for top-right
-SCREEN_WIDTH=$(xdotool getdisplaygeometry | awk '{print $1}')
-XOFFSET=$((SCREEN_WIDTH - WIDTH - 3))  
-YOFFSET=3
-
-# Launch Alacritty running Neovim on today's todo file
+# Launch Alacritty as a floating window in i3
 alacritty \
-  --class todo_popup \
+  --class "todo_popup" \
   --title "TodoPopup" \
   -e bash -c "nvim '$TODO_FILE'" &
 
-# Give it time to appear
-sleep 0.3
+# Wait for the window to appear
+sleep 0.5
 
-# Get window ID
-WIN_ID=$(xdotool search --name "TodoPopup" | tail -1)
+# Get the window ID
+WIN_ID=$(xdotool search --class "todo_popup" | tail -1)
 
-# Resize and move
-xdotool windowsize "$WIN_ID" $WIDTH $HEIGHT
-xdotool windowmove "$WIN_ID" $XOFFSET $YOFFSET
+if [ -z "$WIN_ID" ]; then
+  echo "Error: Could not find window!" >&2
+  exit 1
+fi
 
+# Make it floating and set properties in i3
+i3-msg "[id=$WIN_ID] floating enable"
+i3-msg "[id=$WIN_ID] resize set $WIDTH $HEIGHT"
+
+# Calculate position (top-right corner)
+SCREEN_WIDTH=$(xdotool getdisplaygeometry | awk '{print $1}')
+X_POS=$((SCREEN_WIDTH - WIDTH ))  # 10px padding from the right edge
+Y_POS=0  # 30px padding from the top
+
+i3-msg "[id=$WIN_ID] move position $X_POS $Y_POS"
+
+# Focus the window (optional)
+i3-msg "[id=$WIN_ID] focus"

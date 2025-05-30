@@ -1,26 +1,32 @@
+#!/usr/bin/env bash
 
-#!/bin/bash
+FOLDER=~/devenv/wallpaper      # Folder containing wallpapers
+SCRIPT=~/scripts/pywal16       # Script to run after setting wallpaper
 
-WALLPAPER_DIR="$HOME/wallpaper/wallpapers"
+menu () {
+    if command -v nsxiv >/dev/null; then 
+        CHOICE=$(nsxiv -otb "$FOLDER"/*)
+    elif command -v feh >/dev/null; then
+        CHOICE=$(feh --thumbnails --action1 "echo %f" "$FOLDER" 2>/dev/null | head -n 1)
+    else 
+        CHOICE=$(printf "Random\n%s\n" "$(command ls -v "$FOLDER" | grep -v '^\.' )" | dmenu -c -l 15 -i -p "Wallpaper:")
+        [[ "$CHOICE" != "Random" && -n "$CHOICE" ]] && CHOICE="$FOLDER/$CHOICE"
+    fi
 
-INTERVAL=1800
+    case "$CHOICE" in
+        Random) wal -i "$FOLDER" -o "$SCRIPT" ;;
+        *.*) wal -i "$CHOICE" -o "$SCRIPT" ;;
+        *) exit 0 ;;
+    esac
+}
 
-SET_WALLPAPER_CMD="feh --bg-scale"
-
-if [ ! -d "$WALLPAPER_DIR" ]; then
-  echo "Error: Directory $WALLPAPER_DIR does not exist."
-  exit 1
-fi
-
-while true; do
-  WALLPAPER=$(find "$WALLPAPER_DIR" -type f \( -name '*.jpg' -o -name '*.png' -o -name '*.jpeg' \) | shuf -n 1)
-
-  if [ -z "$WALLPAPER" ]; then
-    echo "No wallpapers found in $WALLPAPER_DIR."
-    exit 1
-  fi
-
-  $SET_WALLPAPER_CMD "$WALLPAPER"
-  sleep $INTERVAL
-done
+# If given arguments:
+# First argument will be used as wallpaper or directory
+# Second argument is the pywal theme (optional)
+case "$#" in
+    0) menu ;;
+    1) wal -i "$1" -o "$SCRIPT" ;;
+    2) wal -i "$1" --theme "$2" -o "$SCRIPT" ;;
+    *) exit 0 ;;
+esac
 
