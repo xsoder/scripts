@@ -1,22 +1,19 @@
 #!/bin/sh
-
 set -xe
-
-ISO_PATH="$HOME/nixos-gnome-24.11.717837.a39ed32a651f-x86_64-linux.iso"
-QCOW2_IMAGE="$HOME/nix.qcow2"
+ISO_PATH="$HOME/VM/archlinux-2025.04.12-x86_64.iso"
+QCOW2_IMAGE="$HOME/arch.qcow2"
 
 # Check if the image exists
 if [ ! -f "$QCOW2_IMAGE" ]; then
     echo "Creating new disk image..."
     qemu-img create -f qcow2 "$QCOW2_IMAGE" 60G
-
     echo "Launching installation from ISO..."
     qemu-system-x86_64 -enable-kvm \
                        -m 8000 \
                        -cdrom "$ISO_PATH" \
                        -drive file="$QCOW2_IMAGE",if=virtio \
                        -boot d \
-                       -netdev user,id=net0 \
+                       -netdev user,id=net0,hostfwd=tcp::2222-:22 \
                        -device virtio-net-pci,netdev=net0 \
                        -vga qxl \
                        -spice port=5930,addr=127.0.0.1,disable-ticketing=on \
@@ -33,7 +30,7 @@ else
                        -m 8000 \
                        -drive file="$QCOW2_IMAGE",if=virtio \
                        -boot c \
-                       -netdev user,id=net0 \
+                       -netdev user,id=net0,hostfwd=tcp::2222-:22 \
                        -device virtio-net-pci,netdev=net0 \
                        -vga qxl \
                        -spice port=5930,addr=127.0.0.1,disable-ticketing=on \
