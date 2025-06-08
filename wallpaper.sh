@@ -1,32 +1,24 @@
-#!/usr/bin/env bash
+#!/bin/bash
 
-FOLDER=~/devenv/wallpaper      # Folder containing wallpapers
-SCRIPT=~/scripts/pywal16       # Script to run after setting wallpaper
+WALLPAPER_DIR="/home/csode/devenv/wallpaper/gruvbox"
+STATE_FILE="/home/csode/.cache/current_wallpaper.txt"
 
-menu () {
-    if command -v nsxiv >/dev/null; then 
-        CHOICE=$(nsxiv -otb "$FOLDER"/*)
-    elif command -v feh >/dev/null; then
-        CHOICE=$(feh --thumbnails --action1 "echo %f" "$FOLDER" 2>/dev/null | head -n 1)
-    else 
-        CHOICE=$(printf "Random\n%s\n" "$(command ls -v "$FOLDER" | grep -v '^\.' )" | dmenu -c -l 15 -i -p "Wallpaper:")
-        [[ "$CHOICE" != "Random" && -n "$CHOICE" ]] && CHOICE="$FOLDER/$CHOICE"
+mapfile -t WALLPAPERS < <(find "$WALLPAPER_DIR" -type f \( -iname "*.jpg" -o -iname "*.png" -o -iname "*.jpeg" \) | sort)
+if [ ${#WALLPAPERS[@]} -eq 0 ]; then
+    notify-send "Wallpaper Switcher" "No wallpapers found in $WALLPAPER_DIR"
+    exit 1
+fi
+
+LAST_WALLPAPER=$(cat "$STATE_FILE" 2>/dev/null)
+INDEX=0
+for i in "${!WALLPAPERS[@]}"; do
+    if [[ "${WALLPAPERS[$i]}" == "$LAST_WALLPAPER" ]]; then
+        INDEX=$(( ($i + 1) % ${#WALLPAPERS[@]} ))
+        break
     fi
+done
 
-    case "$CHOICE" in
-        Random) wal -i "$FOLDER" -o "$SCRIPT" ;;
-        *.*) wal -i "$CHOICE" -o "$SCRIPT" ;;
-        *) exit 0 ;;
-    esac
-}
-
-# If given arguments:
-# First argument will be used as wallpaper or directory
-# Second argument is the pywal theme (optional)
-case "$#" in
-    0) menu ;;
-    1) wal -i "$1" -o "$SCRIPT" ;;
-    2) wal -i "$1" --theme "$2" -o "$SCRIPT" ;;
-    *) exit 0 ;;
-esac
-
+NEXT_WALLPAPER="${WALLPAPERS[$INDEX]}"
+swww img "$NEXT_WALLPAPER" --transition-type any --transition-duration 1.0
+echo "$NEXT_WALLPAPER" > "$STATE_FILE"
+notify-send "Wallpaper Changed" "Set to: $(basename "$NEXT_WALLPAPER")"
