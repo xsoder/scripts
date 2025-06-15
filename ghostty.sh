@@ -21,10 +21,8 @@ if [ -f "$PID_FILE" ]; then
   fi
 fi
 
-# Set output filename with timestamp
 OUTPUT="$RECORD_DIR/ghostty_recording_$(date +'%Y-%m-%d_%H-%M-%S').mkv"
 
-# Get window ID of Ghostty terminal
 WIN_ID=$(xdotool search --onlyvisible --class ghostty | head -n 1)
 
 if [ -z "$WIN_ID" ]; then
