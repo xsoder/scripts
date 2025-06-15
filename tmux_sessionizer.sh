@@ -15,7 +15,7 @@ hydrate() {
 if [[ $# -eq 1 ]]; then
     selected="$1"
 else
-    selected=$(find ~/  ~/learning ~/work ~/dopi ~/Programming/ ~/devenv -mindepth 1 -maxdepth 1 -type d | \
+    selected=$(find ~/  ~/learning ~/notes ~/work ~/dopi ~/programming/ ~/devenv -mindepth 1 -maxdepth 1 -type d | \
     fzf --prompt="Select project:")
 
 fi
