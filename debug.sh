@@ -1,6 +1,6 @@
 #!/bin/bash
 
-save_dir="$HOME/Videos/Recordings"
+save_dir="$HOME/media/Videos/Recordings"
 mkdir -p "$save_dir"
 pidfile="/tmp/wf-record-window.pid"
 

@@ -15,8 +15,8 @@ hydrate() {
 if [[ $# -eq 1 ]]; then
     selected="$1"
 else
-    selected=$(find ~/  ~/learning ~/notes ~/work ~/dopi ~/programming/ ~/devenv -mindepth 1 -maxdepth 1 -type d | \
-    fzf --prompt="Select project:")
+    selected=$(find ~/  ~/devenv/dotfiles ~/xsoder ~/work ~/dopi ~/programming/ ~/devenv -mindepth 1 -maxdepth 1 -type d | \
+    fzf --prompt="Select project: " --reverse)
 
 fi
 
@@ -25,7 +25,7 @@ fi
 selected_name=$(basename "$selected" | tr . _)
 
 if ! has_session "$selected_name"; then
-    tmux new-session -s "$selected_name" -c "$selected" -n "nvim" -d "nvim ."
+    tmux new-session -s "$selected_name" -c "$selected" -n "vim" -d "vim ."
     tmux new-window -t "$selected_name:" -n "shell" -c "$selected"
     hydrate "$selected_name" "$selected"
 fi
@@ -36,4 +36,3 @@ else
     tmux switch-client -t "$selected_name"
     tmux select-window -t "$selected_name:0"
 fi
-

@@ -1,7 +1,7 @@
 #!/bin/sh
 set -xe
-ISO_PATH="$HOME/VM/archlinux-2025.04.12-x86_64.iso"
-QCOW2_IMAGE="$HOME/scripts/win.qcow2"
+ISO_PATH="$HOME/VM/alpine.iso"
+QCOW2_IMAGE="$HOME/VM/alpinw.qcow2"
 
 # Check if the image exists
 if [ ! -f "$QCOW2_IMAGE" ]; then

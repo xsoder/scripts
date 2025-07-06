@@ -88,26 +88,26 @@ EOL
 
 # Create a README file
 cat <<EOL > "$PROJECT_NAME/README.md"
-# **Java Starter Project**  
+# **Java Starter Project**
 
 This is a simple Java starter project. You can clone this repository and start working on Java code immediately.
 
 ---
 
-## **Installation**  
+## **Installation**
 
-### **1. Clone the repository**  
+### **1. Clone the repository**
 \`\`\`bash
 git clone https://github.com/csode/javastarter.git
 \`\`\`
 
-### **2. Navigate into the project directory**  
+### **2. Navigate into the project directory**
 \`\`\`bash
 cd javastarter
 \`\`\`
 
-### **3. Build and set up the project**  
-Run the installation script:  
+### **3. Build and set up the project**
+Run the installation script:
 \`\`\`bash
 ./install.sh
 \`\`\`
@@ -116,9 +116,9 @@ This script will compile your Java files and set up the necessary directory stru
 
 ---
 
-## **Project Structure**  
+## **Project Structure**
 
-The project follows a structured template for easy organization:  
+The project follows a structured template for easy organization:
 \`\`\`
 javastarter/
 │── src/
@@ -132,33 +132,33 @@ javastarter/
 │── README.md             # Project documentation
 \`\`\`
 
-### **Directories Explained**  
-- \`src/main/java/\` → Main source code  
-- \`src/test/java/\` → Unit tests  
-- \`bin/\` → Compiled class files  
-- \`docs/\` → Generated Javadoc documentation  
-- \`install.sh\` → Script to compile and run the project  
-- \`Makefile\` → Automate build/test/docs generation  
+### **Directories Explained**
+- \`src/main/java/\` → Main source code
+- \`src/test/java/\` → Unit tests
+- \`bin/\` → Compiled class files
+- \`docs/\` → Generated Javadoc documentation
+- \`install.sh\` → Script to compile and run the project
+- \`Makefile\` → Automate build/test/docs generation
 
 ---
 
-## **Usage**  
+## **Usage**
 
-### **Run the Java program**  
+### **Run the Java program**
 \`\`\`bash
 java -cp bin com.example.Main
 \`\`\`
 
-### **Run Tests (if applicable)**  
+### **Run Tests (if applicable)**
 \`\`\`bash
 java -cp bin org.junit.runner.JUnitCore com.example.MainTest
 \`\`\`
 
-### **Generate Javadoc**  
+### **Generate Javadoc**
 \`\`\`bash
 javadoc -d docs -sourcepath src/main/java -subpackages com.example
 \`\`\`
-To view the documentation locally, open:  
+To view the documentation locally, open:
 \`\`\`bash
 xdg-open docs/index.html  # Linux
 open docs/index.html      # macOS
@@ -167,7 +167,7 @@ start docs/index.html     # Windows
 
 ---
 
-## **Contributing**  
+## **Contributing**
 If you’d like to contribute, feel free to fork the repository and submit a pull request.
 EOL
 

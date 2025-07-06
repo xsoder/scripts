@@ -9,7 +9,3 @@ sleep 1
 # Take a screenshot of the active window (Rofi in this case)
 scrot ~/rofi.png
 
-
-# Optionally, you can replace the above line with flameshot or scrot if you prefer those
-# flameshot gui
-
