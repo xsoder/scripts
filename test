@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+DIR_PATH="$HOME/media/Videos/terminal/tutorial"
+FILE_NAME="tutorial_$(date)"
+start_file() {
+    if [[ -d $DIR_PATH ]]; then
+        notify-send "Directory already Exist"
+    else
+	mkdir -p $DIR_PATH
+        notify-send "Directory created at $DIR_PATH"
+    fi
+}
+
+start_recording() {
+    local full_path="$DIR_PATH/$FILE_NAME"
+    if [[ -f $FILE_NAME ]]; then
+        echo "$FILE_NAME already exist"
+	touch $full_path
+    else
+	touch $full_path
+        notify-send "File created at $full_path"
+    fi
+}
+start_file
+start_recording

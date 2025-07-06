@@ -31,7 +31,6 @@ while read -r line; do
     device_list="$device_list FALSE $line "
 done < "$previously_connected_devices"
 
-#Show user GUI to pick which two bluetooth devices to connect to 
 selected_devices=$(zenity --list --title="Bluetooth Devices" --checklist \
   --column="Select" --column="Device Info (Name|MAC)" \
   --width=800 --height=600 \

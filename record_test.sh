@@ -1,6 +1,6 @@
 #!/bin/bash
 
-save_dir="$HOME/Videos/Recordings"
+save_dir="$HOME/media/Videos/Recordings"
 mkdir -p "$save_dir"
 pidfile="/tmp/wf-record-window.pid"
 
@@ -52,16 +52,11 @@ fi
 filename="record_window_$(date '+%Y-%m-%d_%H-%M-%S').mp4"
 filepath="$save_dir/$filename"
 
-# Debug: Show what we're trying to record
-echo "Recording window: $selected_title"
-echo "Window address: $address"
-echo "Audio device: $audio_device"
-
 # Start recording with error handling
 if wf-recorder -w "$address" -f "$filepath" $audio_param &> /tmp/wf-recorder.log & then
     echo $! > "$pidfile"
     notify-send "Window recording started" "Recording: $selected_title"
-    
+
     # Optional: Show a brief status after 2 seconds
     (
         sleep 2
