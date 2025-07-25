@@ -6,25 +6,15 @@ mkdir -p "$save_dir"
 filename="screenshot_$(date '+%Y-%m-%d_%H-%M-%S').png"
 filepath="$save_dir/$filename"
 
-mode=$(printf "Region\nWindow\nFullscreen" | dmenu -i -p "Select screenshot mode:")
-
-case "$mode" in
-  Region)
-    scrot -s "$filepath"
-    ;;
-  Window)
-    scrot -u "$filepath"
-    ;;
-  Fullscreen)
-    scrot "$filepath"
-    ;;
-  *)
-    notify-send "Screenshot" "Cancelled or invalid choice" -i dialog-warning
+if ! scrot -s "$filepath" > /dev/null 2>&1; then
+    notify-send "Screenshot" "Cancelled or failed to take screenshot" -i dialog-warning
     exit 1
-    ;;
-esac
+fi
 
-xclip -selection clipboard -t image/png -i "$filepath"
+if ! xclip -selection clipboard -t image/png -i "$filepath" > /dev/null 2>&1; then
+    notify-send "Screenshot" "Cancelled or failed to take screenshot" -i dialog-warning
+    exit 1
+fi
 
 notify-send "Screenshot" "Saved to $filepath and copied to clipboard" -i camera
 
