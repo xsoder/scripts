@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+time=$(echo "" |dmenu -i -p "Enter time to start (hh:mm:ss)")
+
+if [[ -z "$time" ]]; then
+	notify-send "Dmenu has been canceled"
+	exit 1
+fi
+
+if ! command -v sowon &> /dev/null; then
+	notify-send "Error" "'sowon' command not found"
+	exit 1
+fi
+
+sowon "$time" &
+
+notify-send "Success" "Timer set for "$time"." -t 700
