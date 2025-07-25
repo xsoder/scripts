@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+
+read -p "Enter GitHub email: " EMAIL
+
+if [ -z "$EMAIL" ]; then
+	echo "Error: No email provided."
+	exit 1
+fi
+
+KEY_NAME="$HOME/.ssh/id_rsa_github"
+
+if [ -f "$KEY_NAME" ]; then
+	echo "SSH key already exists."
+else
+	ssh-keygen -t rsa -b 4096 -C "$EMAIL" -f "$KEY_NAME" -N ""
+	echo "SSH key generated!"
+fi
+
+
+# Copy public key to clipboard
+if ! command -v xclip &> /dev/null; then
+	echo "xclip could not be found.'."
+	exit 1
+fi
+cat "$KEY_NAME.pub" | xclip -selection clipboard
+echo "SSH public key copied to clipboard."
+
+echo "Load write this in ur .xprofile."
+
+eval "$(ssh-agent -s)"
+ssh-add "$KEY_NAME"
+
+echo "Open your bowser and copy it"
