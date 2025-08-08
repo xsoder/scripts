@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+# Configuration
+VIDEO_OUTPUT="screen_record.mp4"
+GIF_OUTPUT="screen_record.gif"
+TEMP_PALETTE="palette.png"
+FPS=10
+PID_FILE="/tmp/screen_recording.pid"
+
+SCREEN_RES=$(xdpyinfo | grep 'dimensions:' | awk '{print $2}')
+
+if [ -f "$PID_FILE" ]; then
+    echo "Stopping recording..."
+
+    PID=$(cat "$PID_FILE")
+    kill "$PID"
+    rm "$PID_FILE"
+
+    sleep 1
+
+    echo "Converting to GIF..."
+
+    ffmpeg -y -i "$VIDEO_OUTPUT" -vf "fps=$FPS,scale=640:-1:flags=lanczos,palettegen" "$TEMP_PALETTE"
+
+    ffmpeg -y -i "$VIDEO_OUTPUT" -i "$TEMP_PALETTE" -filter_complex "fps=$FPS,scale=640:-1:flags=lanczos[x];[x][1:v]paletteuse" "$GIF_OUTPUT"
+
+    rm -f "$TEMP_PALETTE"
+
+    echo "Conversion complete: $VIDEO_OUTPUT and $GIF_OUTPUT"
+else
+    echo "Starting screen recording... (Run this script again to stop and convert)"
+
+    ffmpeg -y -video_size "$SCREEN_RES" -framerate $FPS -f x11grab -i :0.0 "$VIDEO_OUTPUT" > /dev/null 2>&1 &
+
+    echo $! > "$PID_FILE"
+fi
+
