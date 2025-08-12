@@ -1,0 +1,27 @@
+#!/bin/bash
+
+# List windows
+mapfile -t windows < <(xdotool search --onlyvisible --name ".")
+
+window_list=()
+for win_id in "${windows[@]}"; do
+  title=$(xdotool getwindowname "$win_id")
+  window_list+=("$win_id: $title")
+done
+
+selected=$(printf '%s\n' "${window_list[@]}" | dmenu -i -p "Select window to capture:")
+
+if [ -z "$selected" ]; then
+  notify-send "No window selected."
+  exit 1
+fi
+
+win_id="${selected%%:*}"
+
+output_dir="$HOME/media/Picture/screenshot"
+mkdir -p "$output_dir"
+output_file="$output_dir/${win_id}_$(date +%F_%T).png"
+
+maim -u -i "$win_id" "$output_file"
+#convert "$output_file" -background white -alpha remove -alpha off "$output_file"
+notify-send "Screenshot saved to $output_file"
