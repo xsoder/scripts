@@ -32,11 +32,20 @@ screen_size=$(xdpyinfo | awk '/dimensions:/ {print $2}')
 filename="record_$(date '+%Y-%m-%d_%H-%M-%S').mkv"
 filepath="$save_dir/$filename"
 
-# Lossless / highest quality video options:
-# -crf 0: lossless quality (large file size)
-# -preset veryslow: best compression quality (takes longer to encode)
-# -pix_fmt yuv420p for compatibility, or yuv444p for no chroma subsampling (larger files, better color)
-ffmpeg_opts="-c:v libx264 -crf 0 -preset veryslow -pix_fmt yuv420p -c:a flac"
+# === Optimized ffmpeg settings ===
+# -crf 23 is visually good, small files
+# -preset ultrafast for low CPU usage
+# -c:v h264_vaapi (Intel) / h264_nvenc (NVIDIA) / h264_amf (AMD) for GPU encoding
+# -c:a aac for smaller audio files
+if ffmpeg -hide_banner -hwaccels | grep -q "vaapi"; then
+    video_codec="-hwaccel vaapi -vaapi_device /dev/dri/renderD128 -vf format=nv12,hwupload -c:v h264_vaapi -qp 24"
+elif ffmpeg -hide_banner -hwaccels | grep -q "cuda"; then
+    video_codec="-hwaccel cuda -c:v h264_nvenc -preset fast -cq 23"
+else
+    video_codec="-c:v libx264 -preset ultrafast -crf 23"
+fi
+
+ffmpeg_opts="$video_codec -c:a aac -b:a 128k"
 
 notify-send "Recording started" "Saving to $filename"
 
@@ -49,4 +58,3 @@ setsid bash -c "exec ffmpeg -y \
   \"$filepath\"" &> /tmp/ffmpeg-record.log &
 
 echo $! > "$pidfile"
-

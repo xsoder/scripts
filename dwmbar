@@ -18,4 +18,3 @@ while true; do
     xsetroot -name "$version | Net: $net_status | $server_status"
     sleep 5
 done
-
