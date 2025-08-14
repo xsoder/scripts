@@ -1,0 +1,368 @@
+#!/usr/bin/env bash
+
+
+save_dir="$HOME/media/Videos/Recordings"
+mkdir -p "$save_dir"
+fullscreen_pidfile="/tmp/ffmpeg-screen-record.pid"
+window_pidfile="/tmp/window_record_ffmpeg.pid"
+volume_pidfile="/tmp/screen_recorder_volume.pid"
+
+stop_recordings() {
+    local stopped=false
+    
+    if [ -f "$volume_pidfile" ]; then
+        kill $(cat "$volume_pidfile") 2>/dev/null
+        rm "$volume_pidfile"
+    fi
+    
+    if [ -f "$fullscreen_pidfile" ]; then
+        pid=$(cat "$fullscreen_pidfile")
+        if kill -0 "$pid" 2>/dev/null; then
+            kill -INT "$pid" 2>/dev/null
+            rm "$fullscreen_pidfile"
+            notify-send "Screen Recorder" "Full screen recording stopped"
+            stopped=true
+        else
+            rm "$fullscreen_pidfile"
+        fi
+    fi
+    
+    if [ -f "$window_pidfile" ]; then
+        pid=$(cat "$window_pidfile")
+        if kill -0 "$pid" 2>/dev/null; then
+            kill -INT "$pid" 2>/dev/null
+            rm "$window_pidfile"
+            notify-send "Screen Recorder" "Window recording stopped"
+            stopped=true
+        else
+            rm "$window_pidfile"
+        fi
+    fi
+    
+    if [ "$stopped" = true ]; then
+        zenity --info --title="Screen Recorder" --text="Recording(s) stopped successfully!"
+        exit 0
+    else
+        zenity --error --title="Screen Recorder" --text="No active recordings found."
+        exit 1
+    fi
+}
+
+# Function to show volume control during recording
+show_volume_control() {
+    local current_volume=$(pactl get-sink-volume @DEFAULT_SINK@ | grep -oP '\d+%' | head -1 | tr -d '%')
+    
+    (
+        while true; do
+            new_volume=$(zenity --scale --title="Volume Control - Recording Active" \
+                --text="Adjust system volume while recording:" \
+                --min-value=0 --max-value=100 --value="$current_volume" \
+                --step=5)
+            
+            if [ $? -ne 0 ]; then
+                break
+            fi
+            
+            pactl set-sink-volume @DEFAULT_SINK@ "${new_volume}%"
+            current_volume=$new_volume
+        done
+    ) &
+    
+    echo $! > "$volume_pidfile"
+}
+
+# Function for default quick recording
+default_recording() {
+    # Get default save file
+    default_filename="$save_dir/screen_recording_$(date '+%Y-%m-%d_%H-%M-%S').mkv"
+    outfile=$(zenity --file-selection --save --title="Save recording as..." \
+        --filename="$default_filename" \
+        --file-filter="Video files | *.mkv *.mp4 *.avi")
+    
+    if [ $? -ne 0 ]; then
+        exit 0
+    fi
+    
+    # Ensure .mkv extension
+    if [[ "$outfile" != *.mkv ]]; then
+        outfile="${outfile}.mkv"
+    fi
+    
+    # Get audio source and screen size
+    audio_src="$(pactl get-default-sink).monitor"
+    screen_size=$(xdpyinfo | awk '/dimensions:/ {print $2}')
+    
+    # Show starting dialog
+    (
+        echo "30" ; sleep 1
+        echo "# Starting default screen recording..." ; sleep 1
+        echo "70" ; sleep 1
+        echo "# Recording full screen with audio to:" ; sleep 1
+        echo "# $outfile" ; sleep 1
+        echo "100"
+    ) | zenity --progress --title="Screen Recorder" --text="Initializing default recording..." --percentage=0 --auto-close
+    
+    notify-send "Screen Recorder" "Default recording started\nSaving to: $outfile"
+    
+    # Start recording
+    ffmpeg -y \
+        -video_size "$screen_size" \
+        -framerate 30 \
+        -f x11grab -i :0.0 \
+        -f pulse -i "$audio_src" \
+        -c:v libx264 -preset ultrafast -crf 23 \
+        -c:a aac -b:a 128k \
+        "$outfile" >/dev/null 2>&1 &
+    
+    echo $! > "$fullscreen_pidfile"
+    
+    # Show volume control
+    show_volume_control
+}
+
+# Function to record full screen
+record_fullscreen() {
+    # Get save file
+    default_filename="$save_dir/fullscreen_$(date '+%Y-%m-%d_%H-%M-%S').mkv"
+    outfile=$(zenity --file-selection --save --title="Save full screen recording as..." \
+        --filename="$default_filename" \
+        --file-filter="Video files | *.mkv *.mp4 *.avi")
+    
+    if [ $? -ne 0 ]; then
+        exit 0
+    fi
+    
+    # Ensure .mkv extension
+    if [[ "$outfile" != *.mkv ]]; then
+        outfile="${outfile}.mkv"
+    fi
+    
+    # Get audio source
+    audio_src="$(pactl get-default-sink).monitor"
+    screen_size=$(xdpyinfo | awk '/dimensions:/ {print $2}')
+    
+    # Show recording options dialog
+    audio_choice=$(zenity --list --radiolist --title="Audio Options" \
+        --text="Select audio recording option:" \
+        --column="Select" --column="Option" --column="Description" \
+        TRUE "with-audio" "Record with system audio" \
+        FALSE "no-audio" "Record video only")
+    
+    if [ $? -ne 0 ]; then
+        exit 0
+    fi
+    
+    # Start recording with progress dialog
+    (
+        echo "10" ; sleep 1
+        echo "# Starting full screen recording..." ; sleep 1
+        echo "30" ; sleep 1
+        echo "# Recording to: $outfile" ; sleep 1
+        echo "100"
+    ) | zenity --progress --title="Screen Recorder" --text="Initializing recording..." --percentage=0 --auto-close
+    
+    notify-send "Screen Recorder" "Full screen recording started\nSaving to: $outfile"
+    
+    # Build ffmpeg command
+    if [ "$audio_choice" = "with-audio" ]; then
+        ffmpeg -y \
+            -video_size "$screen_size" \
+            -framerate 30 \
+            -f x11grab -i :0.0 \
+            -f pulse -i "$audio_src" \
+            -c:v libx264 -preset ultrafast -crf 23 \
+            -c:a aac -b:a 128k \
+            "$outfile" >/dev/null 2>&1 &
+    else
+        ffmpeg -y \
+            -video_size "$screen_size" \
+            -framerate 30 \
+            -f x11grab -i :0.0 \
+            -c:v libx264 -preset ultrafast -crf 23 \
+            "$outfile" >/dev/null 2>&1 &
+    fi
+    
+    echo $! > "$fullscreen_pidfile"
+    
+    # Show volume control if recording with audio
+    if [ "$audio_choice" = "with-audio" ]; then
+        show_volume_control
+    else
+        zenity --info --title="Screen Recorder" --text="Full screen recording is now active!\n\nFile will be saved as:\n$outfile\n\nRun this script again to stop recording."
+    fi
+}
+
+# Function to record specific window
+record_window() {
+    # Get list of windows
+    mapfile -t windows < <(xdotool search --onlyvisible --name ".")
+    
+    if [ ${#windows[@]} -eq 0 ]; then
+        zenity --error --title="Screen Recorder" --text="No windows found to record."
+        exit 1
+    fi
+    
+    # Build window list for zenity
+    window_options=()
+    for win_id in "${windows[@]}"; do
+        title=$(xdotool getwindowname "$win_id" 2>/dev/null || echo "Unknown")
+        # Escape special characters for zenity
+        title_escaped=$(echo "$title" | sed 's/&/&amp;/g; s/</&lt;/g; s/>/&gt;/g')
+        window_options+=("$win_id" "$title_escaped")
+    done
+    
+    # Show window selection dialog
+    selected_id=$(zenity --list --title="Select Window" \
+        --text="Choose a window to record:" \
+        --column="Window ID" --column="Window Title" \
+        "${window_options[@]}" --hide-column=1 --print-column=1)
+    
+    if [ $? -ne 0 ] || [ -z "$selected_id" ]; then
+        exit 0
+    fi
+    
+    # Get window geometry
+    eval $(xdotool getwindowgeometry --shell "$selected_id" 2>/dev/null)
+    if [ -z "$WIDTH" ] || [ -z "$HEIGHT" ]; then
+        zenity --error --title="Screen Recorder" --text="Could not get window geometry. Window may have been closed."
+        exit 1
+    fi
+    
+    # Ensure coordinates are not negative
+    X=$(( X < 0 ? 0 : X ))
+    Y=$(( Y < 0 ? 0 : Y ))
+    
+    # Generate suggested filename from window title
+    window_title=$(xdotool getwindowname "$selected_id" 2>/dev/null || echo "window")
+    safe_title=$(echo "$window_title" | tr -cd '[:alnum:]_-' | cut -c1-30)
+    default_filename="$save_dir/${safe_title}_$(date +%F_%T).mkv"
+    
+    # Get save file
+    output_file=$(zenity --file-selection --save --title="Save window recording as..." \
+        --filename="$default_filename" \
+        --file-filter="Video files | *.mkv *.mp4 *.avi")
+    
+    if [ $? -ne 0 ]; then
+        exit 0
+    fi
+    
+    # Ensure .mkv extension
+    if [[ "$output_file" != *.mkv ]]; then
+        output_file="${output_file}.mkv"
+    fi
+    
+    # Show recording quality options
+    quality=$(zenity --list --radiolist --title="Recording Quality" \
+        --text="Select recording quality:" \
+        --column="Select" --column="Quality" --column="Description" \
+        TRUE "high" "High quality (CRF 18)" \
+        FALSE "medium" "Medium quality (CRF 23)" \
+        FALSE "low" "Low quality (CRF 28)")
+    
+    if [ $? -ne 0 ]; then
+        exit 0
+    fi
+    
+    # Set CRF based on quality choice
+    case "$quality" in
+        "high") crf=18 ;;
+        "medium") crf=23 ;;
+        "low") crf=28 ;;
+        *) crf=23 ;;
+    esac
+    
+    # Show progress dialog
+    (
+        echo "10" ; sleep 1
+        echo "# Preparing window recording..." ; sleep 1
+        echo "50" ; sleep 1
+        echo "# Starting capture of window: $window_title" ; sleep 1
+        echo "100"
+    ) | zenity --progress --title="Screen Recorder" --text="Initializing window recording..." --percentage=0 --auto-close
+    
+    notify-send "Screen Recorder" "Window recording started\nWindow: $window_title\nSaving to: $output_file"
+    
+    # Start recording
+    ffmpeg -video_size "${WIDTH}x${HEIGHT}" \
+           -framerate 30 \
+           -f x11grab -i ":0.0+${X},${Y}" \
+           -c:v libx264 -preset ultrafast -crf "$crf" \
+           "$output_file" >/dev/null 2>&1 &
+    
+    ffmpeg_pid=$!
+    echo $ffmpeg_pid > "$window_pidfile"
+    
+    # Show recording active dialog with volume control option
+    zenity --info --title="Screen Recorder" --text="Window recording is now active!\n\nWindow: $window_title\nResolution: ${WIDTH}x${HEIGHT}\nQuality: $quality\n\nFile will be saved as:\n$output_file\n\nRun this script again to stop recording."
+    
+    # Monitor window in background
+    (
+        while kill -0 "$ffmpeg_pid" 2>/dev/null; do
+            if ! xdotool getwindowname "$selected_id" >/dev/null 2>&1; then
+                notify-send "Screen Recorder" "Window closed — stopping recording automatically."
+                kill -INT "$ffmpeg_pid" 2>/dev/null
+                rm -f "$window_pidfile"
+                break
+            fi
+            sleep 2
+        done
+    ) &
+}
+
+# Function to show main menu
+show_main_menu() {
+    choice=$(zenity --list --radiolist --title="Screen Recorder - Custom Options" \
+        --text="Choose recording mode:" --width=450 --height=350 \
+        --column="Select" --column="Mode" --column="Description" \
+        TRUE "fullscreen" "Record entire screen with audio options" \
+        FALSE "window" "Record specific window" \
+        FALSE "stop" "Stop any active recordings")
+    
+    case "$choice" in
+        "fullscreen")
+            record_fullscreen
+            ;;
+        "window")
+            record_window
+            ;;
+        "stop")
+            stop_recordings
+            ;;
+        *)
+            exit 0
+            ;;
+    esac
+}
+
+active_recordings=()
+if [ -f "$fullscreen_pidfile" ]; then
+    pid=$(cat "$fullscreen_pidfile")
+    if kill -0 "$pid" 2>/dev/null; then
+        active_recordings+=("Full screen recording (PID: $pid)")
+    fi
+fi
+
+if [ -f "$window_pidfile" ]; then
+    pid=$(cat "$window_pidfile")
+    if kill -0 "$pid" 2>/dev/null; then
+        active_recordings+=("Window recording (PID: $pid)")
+    fi
+fi
+
+if [ ${#active_recordings[@]} -gt 0 ]; then
+    active_list=$(printf '%s\n' "${active_recordings[@]}")
+    
+    if zenity --question --title="Active Recordings Found" \
+       --text="The following recordings are currently active:\n\n$active_list\n\nDo you want to stop them?" \
+       --ok-label="Stop Recordings" --cancel-label="New Recording"; then
+        stop_recordings
+    fi
+fi
+
+if zenity --question --title="Screen Recorder" --width=400 \
+   --text="Quick Start: Record full screen with audio?\n\nThis will immediately start recording your entire screen with system audio using default settings.\n\nClick 'Yes' for quick recording or 'No' to customize options." \
+   --ok-label="Yes - Quick Record" --cancel-label="No - Customize"; then
+    default_recording
+else
+    show_main_menu
+fi

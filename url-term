@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+# Get last command from history (excluding this script)
+last_cmd=$(history | tail -n 2 | head -n 1 | sed 's/^[ 0-9]*//')
+
+# Run the command and grab links
+links=$(eval "$last_cmd" 2>/dev/null | grep -Eo 'https?://[^ ]+')
+
+if [ -z "$links" ]; then
+    notify-send "No links found in last command output"
+    exit 1
+fi
+
+chosen=$(echo "$links" | sort -u | dmenu -p "Open link:")
+
+[ -n "$chosen" ] && firefox "$chosen"
+

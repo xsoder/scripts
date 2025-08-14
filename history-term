@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+if [ -n "$ZSH_VERSION" ] || [ -f "$HOME/.zsh_history" ]; then
+    cmds=$(tac "$HOME/.zsh_history" | sed 's/^: [0-9]\+:0;//')
+else
+    cmds=$(tac "$HOME/.bash_history")
+fi
+
+chosen=$(echo "$cmds" | dmenu -l 20 -p "Recent commands:")
+
+if [ -n "$chosen" ]; then
+    output=$(eval "$chosen" 2>/dev/null)
+    echo -n "$output" | xclip -selection clipboard
+    notify-send "Copied output of:" "$chosen"
+fi

@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+scripts_dir="$HOME/scripts"
+
+chosen=$(find "$scripts_dir" -maxdepth 1 -type f -executable -printf "%f\n" | sort | dmenu -p "run script:")
+
+[ -n "$chosen" ] && "$scripts_dir/$chosen"
+
