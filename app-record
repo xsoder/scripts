@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 
 pidfile="/tmp/window_record_ffmpeg.pid"
 
@@ -15,9 +15,6 @@ if [ -f "$pidfile" ]; then
   fi
 fi
 
-# No running recording, start new one:
-
-# List windows
 mapfile -t windows < <(xdotool search --onlyvisible --name ".")
 
 window_list=()
@@ -35,6 +32,7 @@ fi
 
 win_id="${selected%%:*}"
 
+# --- Get window geometry ---
 eval $(xdotool getwindowgeometry --shell "$win_id")
 X=$(( X < 0 ? 0 : X ))
 Y=$(( Y < 0 ? 0 : Y ))
@@ -45,9 +43,21 @@ output_file="$output_dir/${win_id}_$(date +%F_%T).mkv"
 
 notify-send "Screen Recorder" "Starting recording of window ID $win_id..."
 
-# Start ffmpeg in background and save its PID
-ffmpeg -video_size "${WIDTH}x${HEIGHT}" -framerate 60 -f x11grab -i ":0.0+${X},${Y}" -c:v libx264 -preset ultrafast -crf 18 "$output_file" &
+ffmpeg -video_size "${WIDTH}x${HEIGHT}" \
+       -framerate 30 \
+       -f x11grab -i ":0.0+${X},${Y}" \
+       -c:v libx264 -preset ultrafast -crf 18 \
+       "$output_file" &
+ffmpeg_pid=$!
+echo $ffmpeg_pid > "$pidfile"
 
-echo $! > "$pidfile"
-notify-send "Screen Recorder" "Recording started. Run the script again to stop."
+while kill -0 "$ffmpeg_pid" 2>/dev/null; do
+  if ! xdotool getwindowname "$win_id" >/dev/null 2>&1; then
+    notify-send "Screen Recorder" "Window closed — stopping recording."
+    kill -INT "$ffmpeg_pid"
+    rm -f "$pidfile"
+    break
+  fi
+  sleep 1
+done
 

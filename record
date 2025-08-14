@@ -1,60 +1,31 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 save_dir="$HOME/media/Videos/Recordings"
 mkdir -p "$save_dir"
 pidfile="/tmp/ffmpeg-screen-record.pid"
 
-# === Stop if already recording ===
 if [ -f "$pidfile" ]; then
-    pid=$(cat "$pidfile")
-    if kill -0 "$pid" 2>/dev/null; then
-        kill -INT "$pid"
-        sleep 1
-        rm "$pidfile"
-        notify-send "Recording stopped"
-        exit 0
-    else
-        rm "$pidfile"
-    fi
+    kill -INT "$(cat "$pidfile")" 2>/dev/null
+    rm "$pidfile"
+    notify-send "Screen Recording Stopped"
+    exit 0
 fi
 
-# === Audio setup ===
-audio_device=$(pactl get-default-sink)
-if [ -n "$audio_device" ]; then
-    audio_param="-f pulse -i ${audio_device}.monitor"
-else
-    audio_param=""
-    notify-send "No audio device detected" "Recording without audio"
-fi
+name=$(echo "" | dmenu -p "Recording name:")
+[ -z "$name" ] && name="untitled_$(date '+%Y-%m-%d_%H-%M-%S')"
 
-# === Video setup ===
+audio_src="$(pactl get-default-sink).monitor"
 screen_size=$(xdpyinfo | awk '/dimensions:/ {print $2}')
-filename="record_$(date '+%Y-%m-%d_%H-%M-%S').mkv"
-filepath="$save_dir/$filename"
+outfile="$save_dir/${name// /_}.mkv"
 
-# === Optimized ffmpeg settings ===
-# -crf 23 is visually good, small files
-# -preset ultrafast for low CPU usage
-# -c:v h264_vaapi (Intel) / h264_nvenc (NVIDIA) / h264_amf (AMD) for GPU encoding
-# -c:a aac for smaller audio files
-if ffmpeg -hide_banner -hwaccels | grep -q "vaapi"; then
-    video_codec="-hwaccel vaapi -vaapi_device /dev/dri/renderD128 -vf format=nv12,hwupload -c:v h264_vaapi -qp 24"
-elif ffmpeg -hide_banner -hwaccels | grep -q "cuda"; then
-    video_codec="-hwaccel cuda -c:v h264_nvenc -preset fast -cq 23"
-else
-    video_codec="-c:v libx264 -preset ultrafast -crf 23"
-fi
-
-ffmpeg_opts="$video_codec -c:a aac -b:a 128k"
-
-notify-send "Recording started" "Saving to $filename"
-
-setsid bash -c "exec ffmpeg -y \
-  -video_size \"$screen_size\" \
-  -framerate 30 \
-  -f x11grab -i :0.0 \
-  $audio_param \
-  $ffmpeg_opts \
-  \"$filepath\"" &> /tmp/ffmpeg-record.log &
+notify-send "Screen Recording Started" "Saving to $outfile"
+ffmpeg -y \
+    -video_size "$screen_size" \
+    -framerate 30 \
+    -f x11grab -i :0.0 \
+    -f pulse -i "$audio_src" \
+    -c:v libx264 -preset ultrafast -crf 23 \
+    -c:a aac -b:a 128k \
+    "$outfile" >/dev/null 2>&1 &
 
 echo $! > "$pidfile"

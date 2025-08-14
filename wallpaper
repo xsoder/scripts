@@ -6,12 +6,13 @@ STATE_FILE="/home/xsoder/.cache/current_wallpaper.txt"
 while true; do
     mapfile -t WALLPAPERS < <(find "$WALLPAPER_DIR" -type f \( -iname "*.jpg" -o -iname "*.png" -o -iname "*.jpeg" \) | sort)
     if [ ${#WALLPAPERS[@]} -eq 0 ]; then
-        notify-send "Wallpaper Switcher" "No wallpapers found in $WALLPAPER_DIR"
+        notify-send -t 500 "Wallpaper Switcher" "No wallpapers found in $WALLPAPER_DIR"
         exit 1
     fi
 
     mkdir -p "$(dirname "$STATE_FILE")"
     LAST_WALLPAPER=$(cat "$STATE_FILE" 2>/dev/null)
+	notify-send -t 500 "Wallpaper set to "$LAST_WALLPAPER""
 
     INDEX=0
     for i in "${!WALLPAPERS[@]}"; do
@@ -23,6 +24,9 @@ while true; do
 
     NEXT_WALLPAPER="${WALLPAPERS[$INDEX]}"
     feh --bg-fill "$NEXT_WALLPAPER"
-    sleep 300
+	echo "$NEXT_WALLPAPER" > "$STATE_FILE"
+    sleep 240
+	notify-send -t 500 "Wallpaper set to "$NEXT_WALLPAPER""
+
 done
 

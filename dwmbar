@@ -1,20 +1,27 @@
 #!/usr/bin/env bash
 
+get_local_ip() {
+    ip -4 addr show | grep -oP '(?<=inet\s)192\.168\.\d+\.\d+' | head -n 1
+}
+
 while true; do
-    version=$(dwm -v 2>&1)
+    localip="Leaked IP: $(get_local_ip)"
+    datetime=$(date '+%Y-%m-%d %H:%M:%S')
 
     if ping -c 1 -W 1 8.8.8.8 > /dev/null 2>&1; then
-        net_status="Online"
+        net_status="On"
     else
-        net_status="Offline"
+        net_status="Off"
     fi
 
     if nc -z localhost 3000 > /dev/null 2>&1; then
-        server_status="Server: UP"
+        server_status="Up"
     else
-        server_status="Server: DOWN"
+        server_status="Down"
     fi
 
-    xsetroot -name "$version | Net: $net_status | $server_status"
+    xsetroot -name "Date: $datetime | $localip | Net: $net_status | Server: $server_status"
+
     sleep 5
 done
+
