@@ -4,6 +4,16 @@ get_local_ip() {
     ip -4 addr show | grep -oP '(?<=inet\s)192\.168\.\d+\.\d+' | head -n 1
 }
 
+get_battery_level() {
+    cat /sys/class/power_supply/BAT*/capacity 2>/dev/null
+}
+
+get_battery_status() {
+    cat /sys/class/power_supply/BAT*/status 2>/dev/null
+}
+
+last_notification_level=-1
+
 while true; do
     localip="Leaked IP: $(get_local_ip)"
     datetime=$(date '+%Y-%m-%d %H:%M:%S')
@@ -20,7 +30,22 @@ while true; do
         server_status="Down"
     fi
 
-    xsetroot -name "Date: $datetime | $localip | Net: $net_status | Server: $server_status"
+    battery_level=$(get_battery_level)
+    battery_status=$(get_battery_status)
+
+    if [ "$battery_status" != "Charging" ]; then
+        if [ "$battery_level" -le 20 ] && [ "$last_notification_level" -ne 20 ]; then
+            notify-send -u critical "Battery Low" "Battery at ${battery_level}%"
+            last_notification_level=20
+        elif [ "$battery_level" -le 10 ] && [ "$last_notification_level" -ne 10 ]; then
+            notify-send -u critical "Battery Very Low" "Battery at ${battery_level}%"
+            last_notification_level=10
+        fi
+    else
+        last_notification_level=-1
+    fi
+
+    xsetroot -name "Date: $datetime | $localip | Net: $net_status | Server: $server_status | Bat: ${battery_level}% ${battery_status}"
 
     sleep 5
 done
