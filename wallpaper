@@ -26,7 +26,7 @@ while true; do
     feh --bg-fill "$NEXT_WALLPAPER"
 	echo "$NEXT_WALLPAPER" > "$STATE_FILE"
     sleep 240
-	notify-send -t 500 "Wallpaper set to "$NEXT_WALLPAPER""
+	notify-send -t 2000 "Wallpaper set to "$NEXT_WALLPAPER""
 
 done
 
