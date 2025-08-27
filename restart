@@ -1,0 +1,3 @@
+sudo systemctl restart wpa_supplicant
+sudo systemctl restart NetworkManager
+
