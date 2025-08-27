@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+
+MEDIA="/home/xsoder/media"
+DOWNLOAD="/home/xsoder/Downloads"
+LOG="/var/log/auto-arrange.log"
+
+# Ensure log file exists
+touch "$LOG"
+
+mkdir -p "$MEDIA/Pictures/Download"
+mkdir -p "$MEDIA/Videos/Download"
+mkdir -p "$MEDIA/Musics/Download"
+
+cd "$DOWNLOAD" || exit
+
+for file in *; do
+    [ -f "$file" ] || continue
+    mimetype=$(file --mime-type -b "$file")
+
+    case "$mimetype" in
+        image/*)
+            mv --verbose "$file" "$MEDIA/Pictures/Download/" >> "$LOG" 2>&1
+            ;;
+        video/*)
+            mv --verbose "$file" "$MEDIA/Videos/Download/" >> "$LOG" 2>&1
+            ;;
+        audio/*)
+            mv --verbose "$file" "$MEDIA/Musics/Download/" >> "$LOG" 2>&1
+            ;;
+        *)
+            echo "$(date): Skipped unknown file: $file (MIME: $mimetype)" >> "$LOG"
+            ;;
+    esac
+done
