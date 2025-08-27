@@ -1,9 +1,45 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 save_dir="$HOME/media/Picture/screenshot"
 mkdir -p "$save_dir"
+
+choice=$(printf "Fullscreen\nRegion\nCancel" | dmenu -i -l 3 -p "Screenshot:")
+if [ -z "$choice" ] || [ "$choice" = "Cancel" ]; then
+    notify-send "Screenshot" "Cancelled" -i dialog-warning
+    exit 1
+fi
+
 filename="screenshot_$(date '+%Y-%m-%d_%H-%M-%S').png"
 filepath="$save_dir/$filename"
-scrot "$filepath"
-xclip -selection clipboard -t image/png -i "$filepath"
+
+case "$choice" in
+  Fullscreen)
+    if ! scrot "$filepath" >/dev/null 2>&1; then
+      notify-send "Screenshot" "Failed to take fullscreen screenshot" -i dialog-warning
+      exit 1
+    fi
+    ;;
+  Region)
+    if ! scrot -s "$filepath" >/dev/null 2>&1; then
+      notify-send "Screenshot" "Cancelled or failed to take region screenshot" -i dialog-warning
+      [ -f "$filepath" ] && rm -f "$filepath"
+      exit 1
+    fi
+    ;;
+  *)
+    notify-send "Screenshot" "Unknown option" -i dialog-warning
+    exit 1
+    ;;
+esac
+
+if ! command -v xclip >/dev/null 2>&1; then
+  notify-send "Screenshot" "Saved to $filepath but xclip is not installed" -i dialog-warning
+  exit 0
+fi
+
+if ! xclip -selection clipboard -t image/png -i "$filepath" >/dev/null 2>&1; then
+  notify-send "Screenshot" "Saved to $filepath but failed to copy to clipboard (xclip)" -i dialog-warning
+  exit 1
+fi
+
 notify-send "Screenshot" "Saved to $filepath and copied to clipboard" -i camera

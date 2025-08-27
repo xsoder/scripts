@@ -41,16 +41,56 @@ output_dir="$HOME/media/Videos/Recordings"
 mkdir -p "$output_dir"
 output_file="$output_dir/${win_id}_$(date +%F_%T).mkv"
 
-notify-send "Screen Recorder" "Starting recording of window ID $win_id..."
+# --- Try to find app's audio stream ---
+app_pid=$(xdotool getwindowpid "$win_id")
 
+# Try to find sink input based on PID
+sink_input_id=$(pactl list sink-inputs | awk -v pid="$app_pid" '
+  $0 ~ /^Sink Input #/ {input_id = $3}
+  $0 ~ /application.process.id =/ {
+    gsub("\"", "", $3)
+    if ($3 == pid) {
+      print input_id
+      exit
+    }
+  }
+')
+
+if [ -n "$sink_input_id" ]; then
+  # Get the sink associated with the input
+  sink_name=$(pactl list sink-inputs | awk -v target="$sink_input_id" '
+    $0 ~ /^Sink Input #/ {current=$3}
+    current == target && $0 ~ /Sink: / {print $2; exit}
+  ')
+
+  # Get monitor source name for the sink
+  monitor_source=$(pactl list short sources | awk -v sink="alsa_output.$sink_name.monitor" '
+    $2 == sink { print $2 }
+  ')
+fi
+
+# Fallback to default monitor if needed
+if [ -z "$monitor_source" ]; then
+  monitor_source=$(pactl info | grep "Default Sink" | awk '{print $3}').monitor
+  notify-send "Screen Recorder" "⚠️ Could not find specific app audio. Using system audio."
+else
+  notify-send "Screen Recorder" "✅ Capturing audio from selected app (PID $app_pid)."
+fi
+
+notify-send "Screen Recorder" "🎥 Starting recording of window ID $win_id..."
+
+# Start FFmpeg with video and audio
 ffmpeg -video_size "${WIDTH}x${HEIGHT}" \
        -framerate 30 \
        -f x11grab -i ":0.0+${X},${Y}" \
+       -f pulse -i "$monitor_source" \
        -c:v libx264 -preset ultrafast -crf 18 \
+       -c:a aac -b:a 192k \
        "$output_file" &
 ffmpeg_pid=$!
 echo $ffmpeg_pid > "$pidfile"
 
+# Monitor window and stop if closed
 while kill -0 "$ffmpeg_pid" 2>/dev/null; do
   if ! xdotool getwindowname "$win_id" >/dev/null 2>&1; then
     notify-send "Screen Recorder" "Window closed — stopping recording."
