@@ -3,30 +3,25 @@
 WALLPAPER_DIR="/home/xsoder/wallpaper/penger"
 STATE_FILE="/home/xsoder/.cache/current_wallpaper.txt"
 
-while true; do
-    mapfile -t WALLPAPERS < <(find "$WALLPAPER_DIR" -type f \( -iname "*.jpg" -o -iname "*.png" -o -iname "*.jpeg" \) | sort)
-    if [ ${#WALLPAPERS[@]} -eq 0 ]; then
-        notify-send -t 500 "Wallpaper Switcher" "No wallpapers found in $WALLPAPER_DIR"
-        exit 1
+mkdir -p "$(dirname "$STATE_FILE")"
+
+if [ -f "$STATE_FILE" ]; then
+    CURRENT_WALLPAPER=$(cat "$STATE_FILE")
+    if [ -f "$CURRENT_WALLPAPER" ]; then
+        feh --bg-fill "$CURRENT_WALLPAPER"
+        exit 0
     fi
+fi
 
-    mkdir -p "$(dirname "$STATE_FILE")"
-    LAST_WALLPAPER=$(cat "$STATE_FILE" 2>/dev/null)
-	notify-send -t 500 "Wallpaper set to "$LAST_WALLPAPER""
+mapfile -t WALLPAPERS < <(find "$WALLPAPER_DIR" -type f \( -iname "*.jpg" -o -iname "*.png" -o -iname "*.jpeg" \))
+if [ ${#WALLPAPERS[@]} -eq 0 ]; then
+    notify-send -t 5000 "Wallpaper Switcher" "No wallpapers found in $WALLPAPER_DIR"
+    exit 1
+fi
 
-    INDEX=0
-    for i in "${!WALLPAPERS[@]}"; do
-        if [[ "${WALLPAPERS[$i]}" == "$LAST_WALLPAPER" ]]; then
-            INDEX=$(( ($i + 1) % ${#WALLPAPERS[@]} ))
-            break
-        fi
-    done
+RANDOM_WALLPAPER="${WALLPAPERS[$RANDOM % ${#WALLPAPERS[@]}]}"
 
-    NEXT_WALLPAPER="${WALLPAPERS[$INDEX]}"
-    feh --bg-fill "$NEXT_WALLPAPER"
-	echo "$NEXT_WALLPAPER" > "$STATE_FILE"
-    sleep 240
-	notify-send -t 2000 "Wallpaper set to "$NEXT_WALLPAPER""
+feh --bg-fill "$RANDOM_WALLPAPER"
+echo "$RANDOM_WALLPAPER" > "$STATE_FILE"
 
-done
-
+notify-send -t 5000 "Wallpaper set to" "$RANDOM_WALLPAPER"

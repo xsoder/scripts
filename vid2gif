@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Usage:
+#   ./vid2gif.sh input.mp4 start_time duration output.gif
+# Examples:
+#   ./vid2gif.sh togif.mp4 50 3 output.gif   # from 50s, 3s long
+#   ./vid2gif.sh togif.mp4 0 all output.gif  # whole video
+
+set -euo pipefail
+
+if [ "$#" -lt 4 ]; then
+    echo "Usage: $0 input.mp4 start_time duration output.gif"
+    echo "Set duration=all to convert full video"
+    exit 1
+fi
+
+INPUT="$1"
+START="$2"
+DURATION="$3"
+OUTPUT="$4"
+
+# Get total video duration
+VID_DUR=$(ffprobe -v error -show_entries format=duration \
+          -of default=noprint_wrappers=1:nokey=1 "$INPUT")
+
+VID_DUR_INT=${VID_DUR%.*}
+
+# If whole video
+if [ "$DURATION" = "all" ]; then
+    echo "[INFO] Using full video ($VID_DUR_INT s)"
+    ffmpeg -i "$INPUT" -ss "$START" \
+    -vf "fps=30,scale=480:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" \
+    -loop 0 "$OUTPUT"
+    exit 0
+fi
+
+# Otherwise
+if (( $(echo "$START >= $VID_DUR" | bc -l) )); then
+    echo "[ERROR] Start time ($START) is beyond video length ($VID_DUR_INT s)"
+    exit 1
+fi
+
+END=$(echo "$START + $DURATION" | bc -l)
+if (( $(echo "$END > $VID_DUR" | bc -l) )); then
+    DURATION=$(echo "$VID_DUR - $START" | bc -l)
+    echo "[WARN] Clamping duration to $DURATION seconds"
+fi
+
+echo "[INFO] Converting $INPUT (start=$START, duration=$DURATION) → $OUTPUT"
+
+ffmpeg -i "$INPUT" -ss "$START" -t "$DURATION" \
+-vf "fps=60,scale=480:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" \
+-loop 0 "$OUTPUT"
+
+echo "[SUCCESS] GIF saved to $OUTPUT"

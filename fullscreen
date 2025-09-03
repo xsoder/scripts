@@ -3,7 +3,7 @@
 save_dir="$HOME/media/Picture/screenshot"
 mkdir -p "$save_dir"
 
-choice=$(printf "Fullscreen\nRegion\nCancel" | dmenu -i -l 3 -p "Screenshot:")
+choice=$(printf "Fullscreen\nRegion\nCancel" | dmenu -i -p "Screenshot:")
 if [ -z "$choice" ] || [ "$choice" = "Cancel" ]; then
     notify-send "Screenshot" "Cancelled" -i dialog-warning
     exit 1

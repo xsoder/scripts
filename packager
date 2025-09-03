@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+
+ERROR="[ERROR]"
+LOG="[LOG]"
+
+draw_bar() {
+    local percent=$1
+    local cols=$(tput cols)
+    local bar_size=$((cols - 10))
+    local filled=$((percent * bar_size / 100))
+    local empty=$((bar_size - filled))
+
+    printf "\r["
+    for ((i=0; i<filled; i++)); do printf "#"; done
+    sleep 0.5
+    for ((i=0; i<empty; i++)); do printf "."; done
+    printf "] %3d%%" "$percent"
+}
+
+create_tar() {
+    local dir=$1
+    local name
+    name=$(basename "$dir").tar
+
+    if [ ! -d "$dir" ]; then
+        printf "%s: The provided argument is not valid\n" "$ERROR"
+        return 1
+    fi
+
+    echo "$LOG Creating tarball: $name"
+
+    tar -cf "$name" "$dir" >/dev/null 2>&1 &
+    local pid=$!
+
+    local percent=0
+    while kill -0 $pid 2>/dev/null; do
+        draw_bar $percent
+        sleep 0.3
+        percent=$(( (percent + 1) % 100 ))
+    done
+
+    draw_bar 100
+    echo
+    echo "$LOG Tarball created: $name"
+}
+
+create_zip() {
+    local dir=$1
+    local name
+    name=$(basename "$dir").zip
+
+    if [ ! -d "$dir" ]; then
+        printf "%s: The provided argument is not valid\n" "$ERROR"
+        return 1
+    fi
+
+    echo "$LOG Creating zip: $name"
+
+    zip -r "$name" "$dir" >/dev/null 2>&1 &
+    local pid=$!
+
+    local percent=0
+    while kill -0 $pid 2>/dev/null; do
+        draw_bar $percent
+        sleep 0.2
+        percent=$(( (percent + 1) % 100 ))
+    done
+
+    draw_bar 100
+    echo
+    echo "$LOG Zip created: $name"
+}
+
+if [ $# -lt 2 ]; then
+    echo "Usage: $0 [tar|zip] <directory>"
+    exit 1
+fi
+
+case $1 in
+    tar) create_tar "$2" ;;
+    zip) create_zip "$2" ;;
+    *) echo "$ERROR Unknown option: $1 (use tar|zip)" ;;
+esac

@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+draw_bar() {
+    local proc=$1
+    local len=$2
+    local percent=$((proc * 10 / len))
+    i=1
+    local s='['
+
+    local i
+    for ((i=0; i < percent; i++)); do
+        s+='#'
+    done
+
+    for ((i=percent; i < 10; i++)); do
+        s+='|'
+    done
+    s+=']'
+
+    echo "$s"
+}
+
+draw_bar 10 1

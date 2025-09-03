@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+mapfile -t WLIST < <(wmctrl -l | awk '{$1=$1; id=$1; $1=""; title=substr($0,2); print id " " title}')
+[ "${#WLIST[@]}" -eq 0 ] && { notify-send "No windows found." >&2; exit 1; }
+
+CHOICE=$(printf '%s\n' "${WLIST[@]}" | dmenu -i -l 10 -p "Select window:") || exit 1
+WIN_ID=$(awk '{print $1}' <<<"$CHOICE")
+
+eval "$(xdotool getwindowgeometry --shell "$WIN_ID")" || { notify-send "Failed to get geometry" >&2; exit 1; }
+xdotool windowactivate --sync "$WIN_ID"
+
+OUT="$HOME/media/Pictures/screenshot_$(date +%Y%m%d_%H%M%S).png"
+GEOM="${WIDTH}x${HEIGHT}+${X}+${Y}"
+
+capture_success=0
+
+if command -v scrot >/dev/null 2>&1; then
+  if scrot -q 100 -a "$GEOM" "$OUT" 2>/dev/null; then
+    capture_success=1
+  fi
+fi
+
+if [ "$capture_success" -eq 0 ] && command -v import >/dev/null 2>&1; then
+  if import -window "$WIN_ID" "$OUT" 2>/dev/null; then
+    capture_success=1
+  fi
+fi
+
+if [ "$capture_success" -ne 1 ]; then
+  notify-send "Failed to capture." >&2
+  exit 1
+fi
+
+notify-send "$OUT"
+
+if command -v xclip >/dev/null 2>&1; then
+  xclip -selection primary -t image/png -i "$OUT" || notify-send "xclip failed" >&2
+fi
+
