@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
 
-GREEN="\033[0;32m"
-RESET="\033[0m"
-
 draw_bar() {
     local percent=$1
     local cols=$(tput cols)
@@ -11,7 +8,7 @@ draw_bar() {
     local empty=$((bar_size - filled))
 
     printf "\r["
-    for ((i=0; i<filled; i++)); do printf "${GREEN}#${RESET}"; done
+    for ((i=0; i<filled; i++)); do printf "#"; done
     for ((i=0; i<empty; i++)); do printf "."; done
     printf "] %3d%%" "$percent"
 }
@@ -23,14 +20,15 @@ create_tar() {
 
     echo "[LOG] Creating tarball: $name"
 
-    tar -cf "$name" "$dir" >/dev/null 2>&1 &
-    local pid=$!
+    local total current percent
+    total=$(find "$dir" -type f | wc -l)
+    current=0
 
-    local percent=0
-    while kill -0 $pid 2>/dev/null; do
-        draw_bar $percent
-        sleep 0.2
-        percent=$(( (percent + 1) % 100 ))
+    tar -cf "$name" "$dir" --verbose 2>&1 \
+    | while read -r file; do
+        current=$((current + 1))
+        percent=$((current * 100 / total))
+        draw_bar "$percent"
     done
 
     draw_bar 100
@@ -44,19 +42,22 @@ create_zip() {
 
     echo "[LOG] Creating zip: $name"
 
-    zip -r "$name" "$dir" >/dev/null 2>&1 &
-    local pid=$!
+    local total current percent
+    total=$(find "$dir" -type f | wc -l)
+    current=0
 
-    local percent=0
-    while kill -0 $pid 2>/dev/null; do
-        draw_bar $percent
-        sleep 0.2
-        percent=$(( (percent + 1) % 100 ))
+    zip -rv "$name" "$dir" 2>/dev/null | while read -r line; do
+        if [[ "$line" == *"adding:"* ]]; then
+            current=$((current + 1))
+            percent=$((current * 100 / total))
+            draw_bar "$percent"
+        fi
     done
 
     draw_bar 100
     echo -e "\n[LOG] Zip created: $name"
 }
+
 
 if [ $# -lt 2 ]; then
     echo "Usage: $0 [tar|zip] <directory>"
