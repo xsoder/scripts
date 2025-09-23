@@ -2,6 +2,7 @@
 
 i3-msg move workspace 1
 i3-msg layout tabbed
-i3-msg exec "st"
 i3-msg exec "emacs"
 i3-msg exec "chromium"
+
+i3-msg exec "penger 20m"

@@ -1,0 +1,28 @@
+#!/bin/bash
+
+screen_width=$(xdpyinfo | awk '/dimensions/{print $2}' | cut -d'x' -f1)
+screen_height=$(xdpyinfo | awk '/dimensions/{print $2}' | cut -d'x' -f2)
+
+dmenu_width=600
+dmenu_height=200
+
+pos_x=$(( (screen_width - dmenu_width) / 2 ))
+pos_y=$(( (screen_height - dmenu_height) / 2 ))
+
+tempfile=$(mktemp)
+
+(
+    cat | dmenu -i -w -l 20 > "$tempfile" &
+    sleep 0.1  # Give it time to start
+
+    win_id=$(xdotool search --onlyvisible --name dmenu | head -n 1)
+
+    if [ -n "$win_id" ]; then
+        xdotool windowmove "$win_id" "$pos_x" "$pos_y"
+    fi
+
+    wait
+)
+
+cat "$tempfile"
+rm "$tempfile"

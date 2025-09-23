@@ -1,3 +1,259 @@
 #!/bin/bash
-xclip -selection clipboard &
-clipman &
+
+# CONFIG
+CLIP_DIR="$HOME/.clipboard_store"
+HIST_DB="$CLIP_DIR/history.tsv"
+MAX_ENTRIES=100
+SLEEP_INTERVAL=0.3
+DMENU_PROMPT="Clipboard History"
+LOCK_FILE="$CLIP_DIR/daemon.lock"
+
+mkdir -p "$CLIP_DIR"
+touch "$HIST_DB"
+
+get_mime_type() {
+    local mime
+    mime=$(xclip -selection clipboard -t TARGETS -o 2>/dev/null | grep -E -m1 'image/|text/|application/')
+    
+    # Fallback to text/plain if clipboard has content but no specific MIME type
+    if [[ -z "$mime" ]] && xclip -selection clipboard -o >/dev/null 2>&1; then
+        mime="text/plain"
+    fi
+    
+    echo "$mime"
+}
+
+# Helper: Save current clipboard content
+save_clipboard() {
+    local mime_type="$1"
+    local ext
+    local timestamp
+    local file
+
+    timestamp=$(date +%s)
+
+    case "$mime_type" in
+        text/plain) ext="txt" ;;
+        image/png) ext="png" ;;
+        image/jpeg) ext="jpg" ;;
+        text/html) ext="html" ;;
+        application/pdf) ext="pdf" ;;
+        *) ext="bin" ;;
+    esac
+
+    file="$CLIP_DIR/entry_${timestamp}.${ext}"
+
+    if xclip -selection clipboard -t "$mime_type" -o > "$file" 2>/dev/null && [[ -s "$file" ]]; then
+        echo -e "${timestamp}\t${mime_type}\t${file}" >> "$HIST_DB"
+        
+        local line_count
+        line_count=$(wc -l < "$HIST_DB")
+        if (( line_count > MAX_ENTRIES )); then
+            local lines_to_delete=$((line_count - MAX_ENTRIES))
+            head -n "$lines_to_delete" "$HIST_DB" | cut -f3 | xargs -r rm -f
+            tail -n "$MAX_ENTRIES" "$HIST_DB" > "$HIST_DB.tmp" && mv "$HIST_DB.tmp" "$HIST_DB"
+        fi
+    else
+        rm -f "$file"
+    fi
+}
+
+start_daemon() {
+    # Create lock file with PID
+    echo $$ > "$LOCK_FILE"
+    
+    local last_hash=""
+    local current_hash
+    local mime
+
+    while true; do
+        mime=$(get_mime_type)
+        
+        if [[ -n "$mime" ]]; then
+            current_hash=$(xclip -selection clipboard -t "$mime" -o 2>/dev/null | sha256sum | awk '{print $1}' 2>/dev/null)
+            
+            if [[ -n "$current_hash" && "$current_hash" != "$last_hash" ]]; then
+                save_clipboard "$mime"
+                last_hash="$current_hash"
+            fi
+        fi
+
+        sleep "$SLEEP_INTERVAL"
+    done
+}
+
+is_daemon_running() {
+    if [[ -f "$LOCK_FILE" ]]; then
+        local pid
+        pid=$(cat "$LOCK_FILE")
+        if kill -0 "$pid" 2>/dev/null && pgrep -f "$0.*daemon" | grep -q "^$pid$"; then
+            return 0
+        else
+            rm -f "$LOCK_FILE"
+            return 1
+        fi
+    fi
+    return 1
+}
+
+# Start daemon if not running
+ensure_daemon() {
+    if ! is_daemon_running; then
+        nohup "$0" daemon >/dev/null 2>&1 &
+        sleep 0.5
+    fi
+}
+
+# Stop daemon
+stop_daemon() {
+    if [[ -f "$LOCK_FILE" ]]; then
+        local pid
+        pid=$(cat "$LOCK_FILE")
+        if kill -0 "$pid" 2>/dev/null; then
+            kill "$pid"
+            sleep 1
+            if kill -0 "$pid" 2>/dev/null; then
+                kill -9 "$pid"
+            fi
+        fi
+        rm -f "$LOCK_FILE"
+        echo "Clipboard daemon stopped"
+    else
+        echo "Clipboard daemon is not running"
+    fi
+}
+
+# Show history menu 
+show_history() {
+    ensure_daemon
+    
+    # Check if history exists
+    if [[ ! -s "$HIST_DB" ]]; then
+        notify-send "Clipboard History" "No clipboard history found"
+        return 1
+    fi
+
+    # Build menu (newest first)
+    local menu
+    menu=$(tac "$HIST_DB" | awk -F'\t' '
+    {
+        timestamp = strftime("%m-%d %H:%M", $1);
+        if ($2 ~ /^text/) {
+            cmd = "head -c 80 \"" $3 "\" | tr \"\\n\\t\" \"  \"";
+            cmd | getline preview;
+            close(cmd);
+            gsub(/[[:space:]]+/, " ", preview);
+            if (length(preview) > 60) preview = substr(preview, 1, 57) "...";
+            print timestamp " │ " preview "\t" $1 "\t" $2 "\t" $3;
+        } else {
+            filename = $3;
+            gsub(/.*\//, "", filename);
+            print timestamp " │ [" $2 "] " filename "\t" $1 "\t" $2 "\t" $3;
+        }
+    }')
+
+    if [[ -z "$menu" ]]; then
+        notify-send "Clipboard History" "No clipboard history found"
+        return 1
+    fi
+
+    # Show dmenu
+    local selected
+    selected=$(echo "$menu" | cut -f1 | dmenu -i -l 15 -p "$DMENU_PROMPT")
+    
+    if [[ -n "$selected" ]]; then
+        # Find the corresponding entry
+        local line
+        line=$(echo "$menu" | grep -F "$selected" | head -1)
+        
+        if [[ -n "$line" ]]; then
+            local file mime
+            mime=$(echo "$line" | cut -f3)
+            file=$(echo "$line" | cut -f4)
+            
+            if [[ -f "$file" ]]; then
+                # Restore to clipboard
+                xclip -selection clipboard -t "$mime" < "$file"
+                notify-send "Clipboard" "Restored: $(basename "$file")"
+            else
+                notify-send "Clipboard Error" "File not found: $(basename "$file")"
+            fi
+        fi
+    fi
+}
+
+# Show status
+status() {
+    if is_daemon_running; then
+        local pid
+        pid=$(cat "$LOCK_FILE")
+        local count
+        count=$(wc -l < "$HIST_DB" 2>/dev/null || echo "0")
+        echo "✓ Clipboard daemon running (PID: $pid)"
+        echo "  History entries: $count"
+        if [[ $count -gt 0 ]]; then
+            echo "  Latest: $(tail -n1 "$HIST_DB" | awk -F'\t' '{print strftime("%Y-%m-%d %H:%M:%S", $1)}')"
+        fi
+    else
+        echo "✗ Clipboard daemon not running"
+    fi
+}
+
+# Show usage
+usage() {
+    echo "Clipboard History Manager"
+    echo ""
+    echo "Usage: $0 [COMMAND]"
+    echo ""
+    echo "Commands:"
+    echo "  show      Show clipboard history menu (default)"
+    echo "  daemon    Start daemon process (internal use)"
+    echo "  start     Start daemon"
+    echo "  stop      Stop daemon"
+    echo "  restart   Restart daemon"
+    echo "  status    Show daemon status"
+    echo ""
+    echo "Setup for i3:"
+    echo "1. Add to i3 config: exec --no-startup-id $0 start"
+    echo "2. Add keybind: bindsym \$mod+v exec $0"
+}
+
+# Main command handling
+case "${1:-show}" in
+    "daemon")
+        start_daemon
+        ;;
+    "start")
+        if is_daemon_running; then
+            echo "Clipboard daemon is already running"
+        else
+            nohup "$0" daemon >/dev/null 2>&1 &
+            sleep 0.5
+            status
+        fi
+        ;;
+    "stop")
+        stop_daemon
+        ;;
+    "restart")
+        stop_daemon
+        sleep 1
+        nohup "$0" daemon >/dev/null 2>&1 &
+        sleep 0.5
+        status
+        ;;
+    "status")
+        status
+        ;;
+    "show"|"")
+        show_history
+        ;;
+    "help"|"-h"|"--help")
+        usage
+        ;;
+    *)
+        echo "Unknown command: $1"
+        usage
+        exit 1
+        ;;
+esac

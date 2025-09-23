@@ -2,7 +2,7 @@
 
 cmds=$(tac "$HOME/.bash_history")
 
-chosen=$(echo "$cmds" | dmenu -l 20 -p "Recent commands:")
+chosen=$(echo "$cmds" | dmenu -c -l 20 -p "Recent commands:")
 
 if [ -n "$chosen" ]; then
     output=$(eval "$chosen" 2>/dev/null)

@@ -1,0 +1,227 @@
+#!/usr/bin/env bash
+
+enable accept
+PORT=8080
+ADDRESS='0.0.0.0'
+
+URL="http://localhost:$PORT"
+
+html-encode() {
+	local s=$1
+
+	s=${s//&/\&amp;}
+	s=${s//</\&lt;}
+	s=${s//>/\&gt;}
+	s=${s//\"/\&quot;}
+	s=${s//\'/\&apos;}
+
+	echo "$s"
+}
+
+urlencode() {
+	local LC_ALL=C
+	for (( i = 0; i < ${#1}; i++ )); do
+		: "${1:i:1}"
+		case "$_" in
+			[a-zA-Z0-9.~_-])
+				printf '%s' "$_"
+				;;
+
+			*)
+				printf '%%%02X' "'$_"
+				;;
+		esac
+	done
+	printf '\n'
+}
+
+
+urldecode() {
+	: "${1//+/ }"
+	printf '%b\n' "${_//%\\x}"
+}
+
+error() {
+	echo '[ERROR]: ' "$@" >&2
+	exit 1
+}
+
+log() {
+	echo "$(date '+%Y-%m-%d %H:%M:%S') - $1"
+}
+
+server_error() {
+	echo '[ERROR]: ' "$@" >> server.log
+}
+
+server_log() {
+	echo '[LOG]: ' "$@" >> server.log
+}
+
+list_directory() {
+	local d=$1
+
+	shopt -s nullglob dotglob
+
+	echo '<!DOCTYPE html>'
+	echo '<html lang="en">'
+	echo '<head>'
+	echo '  <meta charset="utf-8">'
+	printf '  <title>Index of %s</title>\n' "$(html-encode "$d")"
+	echo '  <style>'
+	echo '  body {'
+	echo '    background-color: Canvas;'
+	echo '    color: CanvasText;'
+	echo '    color-scheme: light dark;'
+	echo '  }'
+	echo '  a, a:visited, a:active {'
+	echo '    text-decoration: none;'
+	echo '  }'
+	echo '  </style>'
+	echo '</head>'
+	echo '<body>'
+	echo '<h1>Directory Listing</h1>'
+	echo "<h2>Directory: $(html-encode "$d")</h2>"
+	echo '<hr>'
+	echo '<ul>'
+	local f
+	# loop directories first (to put at top of list)
+	for f in .. "$d"/*/; do
+		local bname=${f%/}
+		bname=${bname##*/}
+
+		local display_name="📁 $bname/"
+		printf '<li><a href="%s">%s</a></li>\n' \
+			"$(urlencode "$bname")" \
+			"$(html-encode "$display_name")"
+	done
+	# loop regular files next (non-directories)
+	for f in "$d"/*; do
+		[[ -f $f ]] || continue
+		local bname=${f##*/}
+
+		local display_name="📄 $bname"
+		printf '<li><a href="%s">%s</a></li>\n' \
+			"$(urlencode "$bname")" \
+			"$(html-encode "$display_name")"
+	done
+	echo '</ul>'
+	echo '<hr>'
+	echo '</body>'
+	echo '</html>'
+}
+
+normalize_path() {
+    local path=/$1
+    local -a parts
+    local -a result=()  # Fixed: was "resul"
+    IFS='/' read -ra parts <<< "$path"
+    for part in "${parts[@]}"; do
+        case "$part" in
+            '');;
+            '.');;
+            '..')unset 'result[-1]' 2>/dev/null;;
+            *) result+=("$part");;
+        esac
+    done
+    local normalized="$(IFS=/; echo "${result[*]}")"
+    echo "/$normalized"
+}
+parse_request() {
+	declare -gA REQ_INFO=()
+	declare -gA REQ_HEADER=()
+	local line
+	local state='status'
+	while read -r line; do
+		line=${line%$'\r'}
+		case "$state" in
+			'status')
+				local method path version
+				read -r  method path version <<< "$line"
+				REQ_INFO[method]=$method
+				REQ_INFO[path]=$path
+				REQ_INFO[version]=$version
+				state='headers'
+				;;
+			'headers')
+				if [[ -z $line ]];then
+					break
+				fi
+				local key value
+				IFS=: read -r key value <<< "$line"
+				key=${key,,}
+				value=${value# *}
+				REQ_HEADER[$key]=$value
+				;;
+			'body')
+				error "No body support"
+				;;
+		esac
+	done
+}
+process_request() {
+	parse_request  <&"$fd"
+
+	echo "${REQ_INFO[method]} ${REQ_INFO[path]}"
+
+	local path=${REQ_INFO[path]}
+	path=${path:1}
+	local query 
+	IFS='?' read -r path query <<< "$path"
+
+	path=$(urldecode "$path")
+
+	path=$(normalize_path "$path")
+
+	path=${path:1}
+	
+	if [[ -f $path ]] ;then
+		printf 'HTTP/1.1 200 OK\r\n'>&"$fd"
+		printf 'Content-Type: text/plain\r\n'>&"$fd"
+		printf '\r\n'>&"$fd"
+		server_log "Rquest File Success $path" 
+		cat "$path" >&"$fd"
+	elif [[ -d $path ]] ;then
+		printf 'HTTP/1.1 200 OK\r\n'>&"$fd"
+		printf 'Content-Type: text/plain\r\n'>&"$fd"
+		printf '\r\n'>&"$fd"
+		server_log "Rquest Directory Success $path" 
+		list_directory "$path" >&"$fd"
+	else
+		printf 'HTTP/1.1 404 ERROR\r\n'>&"$fd"
+		printf 'Content-Type: html/plain\r\n'>&"$fd"
+		printf '\r\n'>&"$fd"
+		server_error "Could not reslove $path" 
+		printf "Could not reslove %s\n" "$path">&"$fd"
+	fi
+	exec {fd}>&-
+}
+
+main() {
+	echo "listening on http://$ADDRESS:$PORT"
+	local fd ip
+	while true;do
+		accept -b "$ADDRESS" -v fd -r ip "$PORT" || error 'failed to read socket'
+		process_request "$fd"
+	done
+	if xdotool search --onlyvisible --name "chromium" > /dev/null 2>&1; then
+		WID=$(xdotool search --onlyvisible --name "chromium" | head -n1)
+		xdotool windowactivate "$WID"
+		xdotool windowmap "$WID"
+		if xdotool key --window "$WID" ctrl+r; then
+			log "Chromium found mom."
+		else
+			error "Chromium failed mom hunt."
+		fi
+	else
+		chromium --new-window "$URL" &
+		sleep 1
+		if pgrep -x "chromium" > /dev/null; then
+			log "Chromium banged ur mom."
+		else
+			error  "Chromium did not bang ur mom."
+		fi
+	fi
+}
+
+main "$@"

@@ -1,9 +1,46 @@
 #!/bin/sh
 set -xe
-ISO_PATH="$HOME/VM/alpine.iso"
-QCOW2_IMAGE="$HOME/VM/alpinw.qcow2"
 
-# Check if the image exists
+# Function to expand tilde in paths
+expand_path() {
+    case "$1" in
+        ~/*) echo "$HOME/${1#~/}" ;;
+        ~) echo "$HOME" ;;
+        *) echo "$1" ;;
+    esac
+}
+
+# Check if correct number of arguments provided
+if [ $# -ne 2 ]; then
+    echo "Usage: $0 <iso_file> <qcow2_image>"
+    echo "Example: $0 debian.iso debian.qcow2"
+    echo "Example: $0 ~/Downloads/alpine.iso ~/VM/alpine.qcow2"
+    exit 1
+fi
+
+# Get arguments and expand paths
+ISO_PATH=$(expand_path "$1")
+QCOW2_IMAGE=$(expand_path "$2")
+
+# Validate ISO file exists
+if [ ! -f "$ISO_PATH" ]; then
+    echo "Error: ISO file '$ISO_PATH' not found!"
+    exit 1
+fi
+
+# Check if QCOW2 directory exists (create if needed)
+QCOW2_DIR=$(dirname "$QCOW2_IMAGE")
+if [ ! -d "$QCOW2_DIR" ]; then
+    echo "Creating directory: $QCOW2_DIR"
+    mkdir -p "$QCOW2_DIR"
+fi
+
+echo "Configuration:"
+echo "ISO Path: $ISO_PATH"
+echo "QCOW2 Image: $QCOW2_IMAGE"
+echo ""
+
+# Check if the QCOW2 image exists
 if [ ! -f "$QCOW2_IMAGE" ]; then
     echo "Creating new disk image..."
     qemu-img create -f qcow2 "$QCOW2_IMAGE" 60G

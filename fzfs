@@ -2,9 +2,9 @@
 
 # Configuration variables with defaults
 MEDIA_OPENER="wslview"
-TEXT_EDITOR="nvim"
+TEXT_EDITOR="emacs"
 LIST_COMMAND="eza"
-PREVIEW_COMMAND="batcat"
+PREVIEW_COMMAND="ls"
 
 # Function to check if a command exists
 command_exists() {

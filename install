@@ -1,0 +1,28 @@
+#!/bin/bash
+if [ "$EUID" -ne 0 ]; then echo "Run as root." 1>&2; exit 1; fi
+if [ "$#" -lt 1 ]; then echo "Usage: $0 <i/u> <AppImage_Name>" 1>&2; exit 1; fi
+op="$1"; img="$2"
+basename_no_ext=$(basename ${img%.*})
+
+case "$op" in
+  i|install)
+    mv "$img" "/usr/local/bin/" && chmod +x "/usr/local/bin/$img" && ln -s "/usr/local/bin/$img" "/usr/local/bin/${img%.*}"
+    if [ $? -eq 0 ]; then
+      echo "Installed. Run $basename_no_ext."
+    else
+      echo "Installation failed." 1>&2
+    fi
+    ;;
+  u|uninstall)
+    rm -f "/usr/local/bin/$img" "/usr/local/bin/${img%.*}"
+    if [ $? -eq 0 ]; then
+      echo "Uninstalled."
+    else
+      echo "Uninstallation failed." 1>&2
+    fi
+    ;;
+  *)
+    echo "Invalid. Use 'i/u' or 'install/uninstall'." 1>&2
+    exit 1
+    ;;
+esac

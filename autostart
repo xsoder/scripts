@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+dunst &
+#blueman-applet &
+xclip -selection clipboard -loops 0 &
+bash $HOME/scripts/hdmi &
+bash $HOME/scripts/dwmbar &
+bash $HOME/scripts/clipboard-daemon start &
+
+#xrdb ~/.Xresources &
