@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+save_dir="$HOME/media/Picture/screenshot"
+mkdir -p "$save_dir"
+
+filename="screenshot_$(date '+%Y-%m-%d_%H-%M-%S').png"
+filepath="$save_dir/$filename"
+
+# Take a fullscreen screenshot
+if ! scrot "$filepath"; then
+    notify-send "Screenshot" "Failed to take fullscreen screenshot" -i dialog-warning
+    exit 1
+fi
+
+# Copy to clipboard if xclip is available
+if command -v xclip >/dev/null 2>&1; then
+    xclip -selection clipboard -t image/png -i "$filepath"
+    notify-send "Screenshot" "Saved to $filepath and copied to clipboard" -i camera
+else
+    notify-send "Screenshot" "Saved to $filepath (xclip not found)" -i camera
+fi
+

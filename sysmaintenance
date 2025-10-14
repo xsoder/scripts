@@ -1,21 +1,957 @@
 #!/bin/bash
 
-echo "Updating system"
-sudo apt update && sudo apt upgrade -y
+# Artix System Manager - Advanced TUI
+# Requires: dialog, pacman, and init system tools
 
-echo "Clearing apt cache"
-apt_cache_space_used="$(du -sh /var/cache/apt/archives/)"
-sudo apt clean
-echo "Space saved: $apt_cache_space_used"
+set -e
 
-echo "Removing orphan packages"
-sudo apt autoremove --purge -y
+# Configuration
+TITLE="Artix System Manager"
+BACKTITLE="Advanced System Management TUI for Artix Linux"
+TEMP_FILE=$(mktemp)
+DIALOG_HEIGHT=25
+DIALOG_WIDTH=80
 
-echo "Clearing ~/.cache"
-home_cache_used="$(du -sh ~/.cache)"
-rm -rf ~/.cache/
-echo "Space saved: $home_cache_used"
+# Dotfiles configuration
+DOTFILE_REPO="$HOME/dotfiles"
+DOTFILE_CONFIG="$HOME/.config/dotfile-manager.conf"
 
-echo "Clearing system logs (older than 7 days)"
-sudo journalctl --vacuum-time=7d
+# Colors for dialog
+export DIALOGRC="$HOME/.dialogrc"
 
+# Cleanup on exit
+trap 'rm -f $TEMP_FILE' EXIT
+
+# Detect init system
+detect_init_system() {
+    if [[ -d /run/openrc ]]; then
+        echo "openrc"
+    elif [[ -d /run/runit ]]; then
+        echo "runit"
+    elif [[ -d /run/s6 ]]; then
+        echo "s6"
+    elif [[ -d /run/dinit ]]; then
+        echo "dinit"
+    else
+        echo "unknown"
+    fi
+}
+
+INIT_SYSTEM=$(detect_init_system)
+
+# Check if running as root for certain operations
+check_root() {
+    if [[ $EUID -ne 0 ]]; then
+        dialog --title "Permission Required" \
+               --msgbox "This operation requires root privileges.\nPlease run with sudo." 8 50
+        return 1
+    fi
+    return 0
+}
+
+# Display system info in a panel
+show_system_info() {
+    local info_text
+    info_text=$(cat <<EOF
+System Information
+==================
+Hostname: $(hostname)
+Kernel: $(uname -r)
+Init System: $INIT_SYSTEM
+Uptime: $(uptime -p)
+Memory: $(free -h | awk '/^Mem:/ {print $3 " / " $2}')
+Disk Usage: $(df -h / | awk 'NR==2 {print $3 " / " $2 " (" $5 ")"}')
+CPU: $(lscpu | grep "Model name" | cut -d':' -f2 | xargs)
+Architecture: $(uname -m)
+EOF
+)
+    dialog --title "System Information" \
+           --msgbox "$info_text" 18 70
+}
+
+# Service Management Functions
+list_services() {
+    local services=()
+    case $INIT_SYSTEM in
+        openrc)
+            while IFS= read -r line; do
+                services+=("$line" "")
+            done < <(rc-status --list 2>/dev/null | awk '{print $1}')
+            ;;
+        runit)
+            while IFS= read -r line; do
+                local service=$(basename "$line")
+                services+=("$service" "")
+            done < <(find /etc/runit/sv -type d -mindepth 1 -maxdepth 1 2>/dev/null)
+            ;;
+        s6)
+            while IFS= read -r line; do
+                local service=$(basename "$line")
+                services+=("$service" "")
+            done < <(find /etc/s6/sv -type d -mindepth 1 -maxdepth 1 2>/dev/null)
+            ;;
+        dinit)
+            while IFS= read -r line; do
+                services+=("$line" "")
+            done < <(dinitctl list 2>/dev/null | awk '{print $1}')
+            ;;
+    esac
+    echo "${services[@]}"
+}
+
+get_service_status() {
+    local service="$1"
+    case $INIT_SYSTEM in
+        openrc)
+            rc-status --servicelist | grep -q "^$service$" && echo "enabled" || echo "disabled"
+            ;;
+        runit)
+            [[ -L "/var/service/$service" ]] && echo "enabled" || echo "disabled"
+            ;;
+        s6)
+            [[ -L "/run/service/$service" ]] && echo "enabled" || echo "disabled"
+            ;;
+        dinit)
+            dinitctl status "$service" &>/dev/null && echo "enabled" || echo "disabled"
+            ;;
+    esac
+}
+
+service_manager() {
+    while true; do
+        local services=($(list_services))
+
+        if [[ ${#services[@]} -eq 0 ]]; then
+            dialog --title "Service Manager" \
+                   --msgbox "No services found or unable to list services.\nInit System: $INIT_SYSTEM" 8 50
+            return
+        fi
+
+        # Build menu with status indicators
+        local menu_items=()
+        for ((i=0; i<${#services[@]}; i+=2)); do
+            local svc="${services[i]}"
+            local status=$(get_service_status "$svc" 2>/dev/null || echo "unknown")
+            menu_items+=("$svc" "[$status]")
+        done
+
+        dialog --title "Service Manager ($INIT_SYSTEM)" \
+               --backtitle "$BACKTITLE" \
+               --menu "Select a service to manage:\n(ESC to go back)" \
+               $DIALOG_HEIGHT $DIALOG_WIDTH 15 \
+               "${menu_items[@]}" \
+               2>$TEMP_FILE
+
+        local choice=$?
+        if [[ $choice -ne 0 ]]; then
+            return
+        fi
+
+        local selected_service=$(cat $TEMP_FILE)
+        manage_single_service "$selected_service"
+    done
+}
+
+manage_single_service() {
+    local service="$1"
+    local status=$(get_service_status "$service")
+
+    while true; do
+        dialog --title "Manage Service: $service" \
+               --backtitle "$BACKTITLE" \
+               --menu "Current Status: $status\nSelect action:" \
+               15 60 6 \
+               "1" "Enable service" \
+               "2" "Disable service" \
+               "3" "Start service" \
+               "4" "Stop service" \
+               "5" "Restart service" \
+               "6" "View service info" \
+               2>$TEMP_FILE
+
+        local choice=$?
+        if [[ $choice -ne 0 ]]; then
+            return
+        fi
+
+        local action=$(cat $TEMP_FILE)
+
+        case $action in
+            1) enable_service "$service" ;;
+            2) disable_service "$service" ;;
+            3) start_service "$service" ;;
+            4) stop_service "$service" ;;
+            5) restart_service "$service" ;;
+            6) show_service_info "$service" ;;
+        esac
+
+        status=$(get_service_status "$service")
+    done
+}
+
+enable_service() {
+    local service="$1"
+    if ! check_root; then return; fi
+
+    case $INIT_SYSTEM in
+        openrc) rc-update add "$service" default ;;
+        runit) ln -sf "/etc/runit/sv/$service" /var/service/ ;;
+        s6) s6-rc-bundle add default "$service" ;;
+        dinit) dinitctl enable "$service" ;;
+    esac
+
+    dialog --title "Service Enabled" --msgbox "Service '$service' has been enabled." 6 50
+}
+
+disable_service() {
+    local service="$1"
+    if ! check_root; then return; fi
+
+    case $INIT_SYSTEM in
+        openrc) rc-update del "$service" ;;
+        runit) rm -f "/var/service/$service" ;;
+        s6) s6-rc-bundle remove default "$service" ;;
+        dinit) dinitctl disable "$service" ;;
+    esac
+
+    dialog --title "Service Disabled" --msgbox "Service '$service' has been disabled." 6 50
+}
+
+start_service() {
+    local service="$1"
+    if ! check_root; then return; fi
+
+    case $INIT_SYSTEM in
+        openrc) rc-service "$service" start ;;
+        runit) sv start "$service" ;;
+        s6) s6-rc -u change "$service" ;;
+        dinit) dinitctl start "$service" ;;
+    esac
+
+    dialog --title "Service Started" --msgbox "Service '$service' has been started." 6 50
+}
+
+stop_service() {
+    local service="$1"
+    if ! check_root; then return; fi
+
+    case $INIT_SYSTEM in
+        openrc) rc-service "$service" stop ;;
+        runit) sv stop "$service" ;;
+        s6) s6-rc -d change "$service" ;;
+        dinit) dinitctl stop "$service" ;;
+    esac
+
+    dialog --title "Service Stopped" --msgbox "Service '$service' has been stopped." 6 50
+}
+
+restart_service() {
+    local service="$1"
+    if ! check_root; then return; fi
+
+    case $INIT_SYSTEM in
+        openrc) rc-service "$service" restart ;;
+        runit) sv restart "$service" ;;
+        s6) s6-rc -r change "$service" ;;
+        dinit) dinitctl restart "$service" ;;
+    esac
+
+    dialog --title "Service Restarted" --msgbox "Service '$service' has been restarted." 6 50
+}
+
+show_service_info() {
+    local service="$1"
+    local info
+
+    case $INIT_SYSTEM in
+        openrc)
+            info=$(rc-service "$service" status 2>&1 || echo "No status available")
+            ;;
+        runit)
+            info=$(sv status "$service" 2>&1 || echo "No status available")
+            ;;
+        s6)
+            info=$(s6-svstat "/run/service/$service" 2>&1 || echo "No status available")
+            ;;
+        dinit)
+            info=$(dinitctl status "$service" 2>&1 || echo "No status available")
+            ;;
+    esac
+
+    dialog --title "Service Info: $service" \
+           --msgbox "$info" 15 70
+}
+
+# Package Management Functions
+package_search() {
+    dialog --title "Search Packages" \
+           --inputbox "Enter package name or keyword:" 8 60 \
+           2>$TEMP_FILE
+
+    local choice=$?
+    if [[ $choice -ne 0 ]]; then
+        return
+    fi
+
+    local search_term=$(cat $TEMP_FILE)
+    if [[ -z "$search_term" ]]; then
+        return
+    fi
+
+    local results=$(pacman -Ss "$search_term" 2>&1)
+
+    dialog --title "Search Results: $search_term" \
+           --textbox <(echo "$results") \
+           $DIALOG_HEIGHT $DIALOG_WIDTH
+}
+
+install_packages() {
+    if ! check_root; then return; fi
+
+    dialog --title "Install Packages" \
+           --infobox "Loading package database..." 3 40
+
+    # Get available packages
+    local packages=$(pacman -Sl | awk '{print $2}' | sort)
+    local menu_items=()
+
+    while IFS= read -r pkg; do
+        menu_items+=("$pkg" "" "off")
+    done <<< "$packages"
+
+    if [[ ${#menu_items[@]} -eq 0 ]]; then
+        dialog --title "Error" --msgbox "No packages found in repository." 6 50
+        return
+    fi
+
+    dialog --title "Install Packages" \
+           --backtitle "$BACKTITLE" \
+           --checklist "Select packages to install (SPACE to select, ENTER to confirm):" \
+           $DIALOG_HEIGHT $DIALOG_WIDTH 15 \
+           "${menu_items[@]}" \
+           2>$TEMP_FILE
+
+    local choice=$?
+    if [[ $choice -ne 0 ]]; then
+        return
+    fi
+
+    local selected=$(cat $TEMP_FILE | tr -d '"')
+    if [[ -z "$selected" ]]; then
+        dialog --title "Install Packages" --msgbox "No packages selected." 6 40
+        return
+    fi
+
+    dialog --title "Confirm Installation" \
+           --yesno "Install the following packages?\n\n$selected" 12 60
+
+    if [[ $? -eq 0 ]]; then
+        clear
+        echo "Installing packages: $selected"
+        pacman -S $selected
+        echo ""
+        read -p "Press ENTER to continue..."
+    fi
+}
+
+uninstall_packages() {
+    if ! check_root; then return; fi
+
+    dialog --title "Uninstall Packages" \
+           --infobox "Loading installed packages..." 3 40
+
+    local packages=$(pacman -Qq | sort)
+    local menu_items=()
+
+    while IFS= read -r pkg; do
+        local desc=$(pacman -Qi "$pkg" 2>/dev/null | grep "Description" | cut -d':' -f2 | xargs)
+        menu_items+=("$pkg" "${desc:0:40}" "off")
+    done <<< "$packages"
+
+    if [[ ${#menu_items[@]} -eq 0 ]]; then
+        dialog --title "Error" --msgbox "No installed packages found." 6 50
+        return
+    fi
+
+    dialog --title "Uninstall Packages" \
+           --backtitle "$BACKTITLE" \
+           --checklist "Select packages to uninstall (SPACE to select, ENTER to confirm):" \
+           $DIALOG_HEIGHT $DIALOG_WIDTH 15 \
+           "${menu_items[@]}" \
+           2>$TEMP_FILE
+
+    local choice=$?
+    if [[ $choice -ne 0 ]]; then
+        return
+    fi
+
+    local selected=$(cat $TEMP_FILE | tr -d '"')
+    if [[ -z "$selected" ]]; then
+        dialog --title "Uninstall Packages" --msgbox "No packages selected." 6 40
+        return
+    fi
+
+    dialog --title "Confirm Uninstallation" \
+           --defaultno \
+           --yesno "Remove the following packages?\n\n$selected\n\nThis action cannot be undone!" 12 60
+
+    if [[ $? -eq 0 ]]; then
+        clear
+        echo "Removing packages: $selected"
+        pacman -Rs $selected
+        echo ""
+        read -p "Press ENTER to continue..."
+    fi
+}
+
+package_manager_menu() {
+    while true; do
+        dialog --title "Package Manager" \
+               --backtitle "$BACKTITLE" \
+               --menu "Select an option:" \
+               15 60 6 \
+               "1" "Search packages" \
+               "2" "Install packages" \
+               "3" "Uninstall packages" \
+               "4" "Update system" \
+               "5" "List installed packages" \
+               "6" "Package information" \
+               2>$TEMP_FILE
+
+        local choice=$?
+        if [[ $choice -ne 0 ]]; then
+            return
+        fi
+
+        case $(cat $TEMP_FILE) in
+            1) package_search ;;
+            2) install_packages ;;
+            3) uninstall_packages ;;
+            4) update_system ;;
+            5) list_installed_packages ;;
+            6) package_info ;;
+        esac
+    done
+}
+
+update_system() {
+    if ! check_root; then return; fi
+
+    dialog --title "System Update" \
+           --yesno "This will update all packages on your system.\nContinue?" 8 50
+
+    if [[ $? -eq 0 ]]; then
+        clear
+        echo "Updating system..."
+        pacman -Syu
+        echo ""
+        read -p "Press ENTER to continue..."
+    fi
+}
+
+list_installed_packages() {
+    local packages=$(pacman -Q)
+    dialog --title "Installed Packages" \
+           --textbox <(echo "$packages") \
+           $DIALOG_HEIGHT $DIALOG_WIDTH
+}
+
+package_info() {
+    dialog --title "Package Information" \
+           --inputbox "Enter package name:" 8 50 \
+           2>$TEMP_FILE
+
+    local choice=$?
+    if [[ $choice -ne 0 ]]; then
+        return
+    fi
+
+    local pkg=$(cat $TEMP_FILE)
+    if [[ -z "$pkg" ]]; then
+        return
+    fi
+
+    local info=$(pacman -Qi "$pkg" 2>&1 || pacman -Si "$pkg" 2>&1)
+
+    dialog --title "Package Info: $pkg" \
+           --textbox <(echo "$info") \
+           $DIALOG_HEIGHT $DIALOG_WIDTH
+}
+
+# Dotfile Manager Functions
+dotfile_manager_menu() {
+    while true; do
+        local repo_status="Not initialized"
+        if [[ -d "$DOTFILE_REPO/.git" ]]; then
+            repo_status="Initialized at $DOTFILE_REPO"
+        fi
+
+        dialog --title "Dotfile Manager" \
+               --backtitle "$BACKTITLE" \
+               --menu "Repository: $repo_status\n\nSelect an option:" \
+               18 70 8 \
+               "1" "Initialize dotfile repository" \
+               "2" "Add file/directory to dotfiles" \
+               "3" "Remove file from dotfiles" \
+               "4" "Deploy dotfiles (symlink)" \
+               "5" "List managed dotfiles" \
+               "6" "Git commit changes" \
+               "7" "Git push changes" \
+               "8" "Configure remote repository" \
+               2>$TEMP_FILE
+
+        local choice=$?
+        if [[ $choice -ne 0 ]]; then
+            return
+        fi
+
+        case $(cat $TEMP_FILE) in
+            1) init_dotfile_repo ;;
+            2) add_dotfile ;;
+            3) remove_dotfile ;;
+            4) deploy_dotfiles ;;
+            5) list_dotfiles ;;
+            6) commit_dotfiles ;;
+            7) push_dotfiles ;;
+            8) configure_remote ;;
+        esac
+    done
+}
+
+init_dotfile_repo() {
+    if [[ -d "$DOTFILE_REPO/.git" ]]; then
+        dialog --title "Already Initialized" \
+               --msgbox "Dotfile repository already exists at:\n$DOTFILE_REPO" 8 60
+        return
+    fi
+
+    dialog --title "Initialize Dotfile Repository" \
+           --inputbox "Enter dotfile repository path:" 8 60 "$DOTFILE_REPO" \
+           2>$TEMP_FILE
+
+    local choice=$?
+    if [[ $choice -ne 0 ]]; then
+        return
+    fi
+
+    DOTFILE_REPO=$(cat $TEMP_FILE)
+    mkdir -p "$DOTFILE_REPO"
+    cd "$DOTFILE_REPO"
+    git init
+
+    echo "# Dotfiles" > README.md
+    git add README.md
+    git commit -m "Initial commit"
+
+    mkdir -p "$(dirname "$DOTFILE_CONFIG")"
+    echo "DOTFILE_REPO=$DOTFILE_REPO" > "$DOTFILE_CONFIG"
+
+    dialog --title "Success" \
+           --msgbox "Dotfile repository initialized at:\n$DOTFILE_REPO" 8 60
+}
+
+add_dotfile() {
+    if [[ ! -d "$DOTFILE_REPO/.git" ]]; then
+        dialog --title "Error" \
+               --msgbox "Please initialize the dotfile repository first." 6 50
+        return
+    fi
+
+    dialog --title "Add Dotfile" \
+           --inputbox "Enter path to file/directory to add:\n(e.g., ~/.bashrc or ~/.config/nvim)" 10 70 \
+           2>$TEMP_FILE
+
+    local choice=$?
+    if [[ $choice -ne 0 ]]; then
+        return
+    fi
+
+    local file_path=$(cat $TEMP_FILE)
+    file_path="${file_path/#\~/$HOME}"
+
+    if [[ ! -e "$file_path" ]]; then
+        dialog --title "Error" \
+               --msgbox "File or directory not found:\n$file_path" 8 60
+        return
+    fi
+
+    local relative_path="${file_path#$HOME/}"
+    local target_path="$DOTFILE_REPO/$relative_path"
+
+    mkdir -p "$(dirname "$target_path")"
+
+    if [[ -e "$target_path" ]]; then
+        dialog --title "File Exists" \
+               --yesno "This file already exists in dotfiles.\nOverwrite?" 8 50
+        if [[ $? -ne 0 ]]; then
+            return
+        fi
+    fi
+
+    cp -r "$file_path" "$target_path"
+
+    cd "$DOTFILE_REPO"
+    git add "$relative_path"
+
+    dialog --title "Success" \
+           --msgbox "Added to dotfiles:\n$relative_path\n\nDon't forget to commit!" 10 60
+}
+
+remove_dotfile() {
+    if [[ ! -d "$DOTFILE_REPO/.git" ]]; then
+        dialog --title "Error" \
+               --msgbox "Please initialize the dotfile repository first." 6 50
+        return
+    fi
+
+    cd "$DOTFILE_REPO"
+    local files=$(git ls-files)
+
+    if [[ -z "$files" ]]; then
+        dialog --title "No Files" \
+               --msgbox "No files are currently managed." 6 50
+        return
+    fi
+
+    local menu_items=()
+    while IFS= read -r file; do
+        menu_items+=("$file" "")
+    done <<< "$files"
+
+    dialog --title "Remove Dotfile" \
+           --menu "Select file to remove:" \
+           $DIALOG_HEIGHT $DIALOG_WIDTH 15 \
+           "${menu_items[@]}" \
+           2>$TEMP_FILE
+
+    local choice=$?
+    if [[ $choice -ne 0 ]]; then
+        return
+    fi
+
+    local file=$(cat $TEMP_FILE)
+
+    dialog --title "Confirm Removal" \
+           --yesno "Remove '$file' from dotfiles?" 8 60
+
+    if [[ $? -eq 0 ]]; then
+        git rm -r "$file"
+        dialog --title "Success" \
+               --msgbox "Removed from dotfiles:\n$file\n\nDon't forget to commit!" 10 60
+    fi
+}
+
+deploy_dotfiles() {
+    if [[ ! -d "$DOTFILE_REPO/.git" ]]; then
+        dialog --title "Error" \
+               --msgbox "Please initialize the dotfile repository first." 6 50
+        return
+    fi
+
+    cd "$DOTFILE_REPO"
+    local files=$(git ls-files)
+
+    if [[ -z "$files" ]]; then
+        dialog --title "No Files" \
+               --msgbox "No files to deploy." 6 50
+        return
+    fi
+
+    dialog --title "Deploy Dotfiles" \
+           --yesno "This will create symlinks from your home directory to the dotfile repository.\n\nExisting files will be backed up with .bak extension.\n\nContinue?" 12 70
+
+    if [[ $? -ne 0 ]]; then
+        return
+    fi
+
+    local deployed=0
+    local backed_up=0
+
+    while IFS= read -r file; do
+        local source="$DOTFILE_REPO/$file"
+        local target="$HOME/$file"
+
+        mkdir -p "$(dirname "$target")"
+
+        if [[ -e "$target" && ! -L "$target" ]]; then
+            mv "$target" "$target.bak"
+            ((backed_up++))
+        elif [[ -L "$target" ]]; then
+            rm "$target"
+        fi
+
+        ln -sf "$source" "$target"
+        ((deployed++))
+    done <<< "$files"
+
+    dialog --title "Deployment Complete" \
+           --msgbox "Deployed: $deployed files\nBacked up: $backed_up files" 8 50
+}
+
+list_dotfiles() {
+    if [[ ! -d "$DOTFILE_REPO/.git" ]]; then
+        dialog --title "Error" \
+               --msgbox "Please initialize the dotfile repository first." 6 50
+        return
+    fi
+
+    cd "$DOTFILE_REPO"
+    local files=$(git ls-tree -r --name-only HEAD 2>/dev/null || echo "No files tracked yet")
+
+    dialog --title "Managed Dotfiles" \
+           --textbox <(echo "$files") \
+           $DIALOG_HEIGHT $DIALOG_WIDTH
+}
+
+commit_dotfiles() {
+    if [[ ! -d "$DOTFILE_REPO/.git" ]]; then
+        dialog --title "Error" \
+               --msgbox "Please initialize the dotfile repository first." 6 50
+        return
+    fi
+
+    cd "$DOTFILE_REPO"
+    local status=$(git status --short)
+
+    if [[ -z "$status" ]]; then
+        dialog --title "No Changes" \
+               --msgbox "No changes to commit." 6 40
+        return
+    fi
+
+    dialog --title "Git Status" \
+           --msgbox "Changes to commit:\n\n$status" 15 70
+
+    dialog --title "Commit Message" \
+           --inputbox "Enter commit message:" 8 60 "Update dotfiles" \
+           2>$TEMP_FILE
+
+    local choice=$?
+    if [[ $choice -ne 0 ]]; then
+        return
+    fi
+
+    local message=$(cat $TEMP_FILE)
+    git add -A
+    git commit -m "$message"
+
+    dialog --title "Success" \
+           --msgbox "Changes committed successfully!" 6 40
+}
+
+push_dotfiles() {
+    if [[ ! -d "$DOTFILE_REPO/.git" ]]; then
+        dialog --title "Error" \
+               --msgbox "Please initialize the dotfile repository first." 6 50
+        return
+    fi
+
+    cd "$DOTFILE_REPO"
+
+    if ! git remote get-url origin &>/dev/null; then
+        dialog --title "No Remote" \
+               --msgbox "No remote repository configured.\nPlease configure a remote first." 8 50
+        return
+    fi
+
+    dialog --title "Push to Remote" \
+           --yesno "Push changes to remote repository?" 8 50
+
+    if [[ $? -eq 0 ]]; then
+        clear
+        echo "Pushing to remote repository..."
+        git push
+        echo ""
+        read -p "Press ENTER to continue..."
+    fi
+}
+
+configure_remote() {
+    if [[ ! -d "$DOTFILE_REPO/.git" ]]; then
+        dialog --title "Error" \
+               --msgbox "Please initialize the dotfile repository first." 6 50
+        return
+    fi
+
+    dialog --title "Configure Remote Repository" \
+           --inputbox "Enter remote repository URL:\n(e.g., git@github.com:username/dotfiles.git)" 10 70 \
+           2>$TEMP_FILE
+
+    local choice=$?
+    if [[ $choice -ne 0 ]]; then
+        return
+    fi
+
+    local remote_url=$(cat $TEMP_FILE)
+
+    cd "$DOTFILE_REPO"
+
+    if git remote get-url origin &>/dev/null; then
+        git remote set-url origin "$remote_url"
+    else
+        git remote add origin "$remote_url"
+    fi
+
+    dialog --title "Success" \
+           --msgbox "Remote repository configured:\n$remote_url" 8 70
+}
+
+# System tools menu
+system_tools_menu() {
+    while true; do
+        dialog --title "System Tools" \
+               --backtitle "$BACKTITLE" \
+               --menu "Select a tool:" \
+               15 60 5 \
+               "1" "View system logs" \
+               "2" "Check disk usage" \
+               "3" "Process manager" \
+               "4" "Network information" \
+               "5" "System information" \
+               2>$TEMP_FILE
+
+        local choice=$?
+        if [[ $choice -ne 0 ]]; then
+            return
+        fi
+
+        case $(cat $TEMP_FILE) in
+            1) view_system_logs ;;
+            2) check_disk_usage ;;
+            3) process_manager ;;
+            4) network_info ;;
+            5) show_system_info ;;
+        esac
+    done
+}
+
+view_system_logs() {
+    local log_files=()
+
+    if command -v journalctl &>/dev/null; then
+        log_files+=("journal" "View systemd journal")
+    fi
+
+    if [[ -f /var/log/syslog ]]; then
+        log_files+=("/var/log/syslog" "System log")
+    fi
+
+    if [[ -f /var/log/messages ]]; then
+        log_files+=("/var/log/messages" "System messages")
+    fi
+
+    log_files+=("/var/log/pacman.log" "Package manager log")
+
+    dialog --title "System Logs" \
+           --menu "Select log to view:" \
+           15 60 8 \
+           "${log_files[@]}" \
+           2>$TEMP_FILE
+
+    local choice=$?
+    if [[ $choice -ne 0 ]]; then
+        return
+    fi
+
+    local log=$(cat $TEMP_FILE)
+
+    if [[ "$log" == "journal" ]]; then
+        dialog --title "System Journal" \
+               --textbox <(journalctl -n 100) \
+               $DIALOG_HEIGHT $DIALOG_WIDTH
+    else
+        if [[ -f "$log" ]]; then
+            dialog --title "Log: $log" \
+                   --textbox "$log" \
+                   $DIALOG_HEIGHT $DIALOG_WIDTH
+        else
+            dialog --title "Error" --msgbox "Log file not found: $log" 6 50
+        fi
+    fi
+}
+
+check_disk_usage() {
+    local disk_info=$(df -h | grep -v "tmpfs")
+    dialog --title "Disk Usage" \
+           --textbox <(echo "$disk_info") \
+           $DIALOG_HEIGHT $DIALOG_WIDTH
+}
+
+process_manager() {
+    local processes=$(ps aux --sort=-%mem | head -20)
+    dialog --title "Top Processes (by memory)" \
+           --textbox <(echo "$processes") \
+           $DIALOG_HEIGHT $DIALOG_WIDTH
+}
+
+network_info() {
+    local net_info=$(ip addr show)
+    dialog --title "Network Information" \
+           --textbox <(echo "$net_info") \
+           $DIALOG_HEIGHT $DIALOG_WIDTH
+}
+
+# Main menu
+main_menu() {
+    while true; do
+        dialog --title "$TITLE" \
+               --backtitle "$BACKTITLE" \
+               --menu "Main Menu - Select an option:" \
+               18 70 7 \
+               "1" "Service Manager" \
+               "2" "Package Manager" \
+               "3" "Dotfile Manager" \
+               "4" "System Tools" \
+               "5" "System Information" \
+               "6" "About" \
+               "7" "Exit" \
+               2>$TEMP_FILE
+
+        local choice=$?
+        if [[ $choice -ne 0 ]]; then
+            clear
+            exit 0
+        fi
+
+        case $(cat $TEMP_FILE) in
+            1) service_manager ;;
+            2) package_manager_menu ;;
+            3) dotfile_manager_menu ;;
+            4) system_tools_menu ;;
+            5) show_system_info ;;
+            6) show_about ;;
+            7)
+                clear
+                exit 0
+                ;;
+        esac
+    done
+}
+
+show_about() {
+    dialog --title "About" \
+           --msgbox "Artix System Manager v1.0\n\nA comprehensive TUI for managing Artix Linux systems.\n\nFeatures:\n- Service management (OpenRC/runit/s6/dinit)\n- Package management (pacman)\n- Dotfile management with Git\n- System monitoring tools\n\nCreated with dialog and bash." 16 60
+}
+
+# Check dependencies
+check_dependencies() {
+    local missing_deps=()
+
+    for cmd in dialog pacman git; do
+        if ! command -v $cmd &>/dev/null; then
+            missing_deps+=("$cmd")
+        fi
+    done
+
+    if [[ ${#missing_deps[@]} -gt 0 ]]; then
+        echo "Error: Missing required dependencies:"
+        printf '%s\n' "${missing_deps[@]}"
+        echo ""
+        echo "Please install them with: sudo pacman -S ${missing_deps[*]}"
+        exit 1
+    fi
+}
+
+# Start the application
+check_dependencies
+main_menu

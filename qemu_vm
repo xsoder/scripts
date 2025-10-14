@@ -10,25 +10,21 @@ expand_path() {
     esac
 }
 
-# Check if correct number of arguments provided
-if [ $# -ne 2 ]; then
-    echo "Usage: $0 <iso_file> <qcow2_image>"
-    echo "Example: $0 debian.iso debian.qcow2"
-    echo "Example: $0 ~/Downloads/alpine.iso ~/VM/alpine.qcow2"
+# Handle usage
+if [ $# -eq 1 ]; then
+    ISO_PATH=""
+    QCOW2_IMAGE=$(expand_path "$1")
+elif [ $# -eq 2 ]; then
+    ISO_PATH=$(expand_path "$1")
+    QCOW2_IMAGE=$(expand_path "$2")
+else
+    echo "Usage:"
+    echo "  $0 <qcow2_image>                 # Boot from existing image"
+    echo "  $0 <iso_file> <qcow2_image>      # Install from ISO"
     exit 1
 fi
 
-# Get arguments and expand paths
-ISO_PATH=$(expand_path "$1")
-QCOW2_IMAGE=$(expand_path "$2")
-
-# Validate ISO file exists
-if [ ! -f "$ISO_PATH" ]; then
-    echo "Error: ISO file '$ISO_PATH' not found!"
-    exit 1
-fi
-
-# Check if QCOW2 directory exists (create if needed)
+# Check/create qcow2 directory
 QCOW2_DIR=$(dirname "$QCOW2_IMAGE")
 if [ ! -d "$QCOW2_DIR" ]; then
     echo "Creating directory: $QCOW2_DIR"
@@ -36,14 +32,25 @@ if [ ! -d "$QCOW2_DIR" ]; then
 fi
 
 echo "Configuration:"
-echo "ISO Path: $ISO_PATH"
+[ -n "$ISO_PATH" ] && echo "ISO Path: $ISO_PATH"
 echo "QCOW2 Image: $QCOW2_IMAGE"
 echo ""
 
-# Check if the QCOW2 image exists
+# Boot logic
 if [ ! -f "$QCOW2_IMAGE" ]; then
+    if [ -z "$ISO_PATH" ]; then
+        echo "Error: QCOW2 image not found and no ISO provided to install from."
+        exit 1
+    fi
+
+    if [ ! -f "$ISO_PATH" ]; then
+        echo "Error: ISO file '$ISO_PATH' not found!"
+        exit 1
+    fi
+
     echo "Creating new disk image..."
     qemu-img create -f qcow2 "$QCOW2_IMAGE" 60G
+
     echo "Launching installation from ISO..."
     qemu-system-x86_64 -enable-kvm \
                        -m 8000 \

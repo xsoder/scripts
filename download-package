@@ -1,0 +1,305 @@
+#!/bin/bash
+
+# FZF-style Package Manager - Working version with proper input handling
+
+# Detect package manager
+detect_package_manager() {
+    if command -v pacman &> /dev/null; then
+        echo "pacman"
+    elif command -v apt &> /dev/null; then
+        echo "apt"
+    elif command -v dnf &> /dev/null; then
+        echo "dnf"
+    elif command -v yum &> /dev/null; then
+        echo "yum"
+    elif command -v zypper &> /dev/null; then
+        echo "zypper"
+    else
+        clear
+        echo "No supported package manager found!"
+        exit 1
+    fi
+}
+
+PKG_MGR=$(detect_package_manager)
+ALL_PACKAGES=$(mktemp)
+SELECTED_INDEX=0
+SEARCH_TERM=""
+PAGE_SIZE=15
+
+# Cleanup on exit
+cleanup() {
+    rm -f "$ALL_PACKAGES"
+    clear
+    tput cnorm 2>/dev/null
+}
+trap cleanup EXIT INT TERM
+
+# Get all available packages
+get_all_packages() {
+    case $PKG_MGR in
+        pacman)
+            pacman -Sl | awk '{print $2}' | sort -u
+            ;;
+        apt)
+            apt-cache pkgnames | sort
+            ;;
+        dnf|yum)
+            $PKG_MGR list available 2>/dev/null | tail -n +2 | awk '{print $1}' | cut -d. -f1 | sort -u
+            ;;
+        zypper)
+            zypper search -t package 2>/dev/null | tail -n +5 | awk '{print $3}' | sort -u
+            ;;
+    esac
+}
+
+# Filter packages on the fly
+get_filtered_packages() {
+    local search="$1"
+    if [ -z "$search" ]; then
+        cat "$ALL_PACKAGES"
+    else
+        grep -i "$search" "$ALL_PACKAGES" 2>/dev/null
+    fi
+}
+
+# Draw the interface
+draw_interface() {
+    local filtered=$(get_filtered_packages "$SEARCH_TERM")
+    local total=$(echo "$filtered" | grep -c "^" 2>/dev/null || echo 0)
+
+    # Get terminal size for centering
+    local term_height=$(tput lines)
+    local term_width=$(tput cols)
+    local box_width=84
+    local start_col=$(( (term_width - box_width) / 2 ))
+    local start_row=$(( (term_height - 26) / 2 ))
+
+    if [ $start_col -lt 0 ]; then start_col=0; fi
+    if [ $start_row -lt 0 ]; then start_row=2; fi
+
+    clear
+
+    # Draw centered box
+    tput cup $start_row $start_col
+    echo "╔══════════════════════════════════════════════════════════════════════════════╗"
+    tput cup $((start_row + 1)) $start_col
+    printf "║ Package Manager (%s) - %d packages" "$PKG_MGR" "$total"
+    tput cup $((start_row + 1)) $((start_col + 78))
+    echo "║"
+    tput cup $((start_row + 2)) $start_col
+    printf "║%80s║\n" ""
+    tput cup $((start_row + 3)) $start_col
+    echo "╠══════════════════════════════════════════════════════════════════════════════╣"
+    tput cup $((start_row + 4)) $start_col
+    printf "║ > %-75s║\n" "${SEARCH_TERM}_"
+    tput cup $((start_row + 5)) $start_col
+    echo "╠══════════════════════════════════════════════════════════════════════════════╣"
+    tput cup $((start_row + 6)) $start_col
+    echo "║ ↑↓: Navigate | Enter: Install | Backspace: Delete | ESC/q: Exit             ║"
+    tput cup $((start_row + 7)) $start_col
+    echo "╚══════════════════════════════════════════════════════════════════════════════╝"
+
+    # Adjust selected index if out of bounds
+    if [ $total -gt 0 ] && [ $SELECTED_INDEX -ge $total ]; then
+        SELECTED_INDEX=$((total - 1))
+    fi
+    if [ $SELECTED_INDEX -lt 0 ]; then
+        SELECTED_INDEX=0
+    fi
+
+    # Package list
+    local start_index=$((SELECTED_INDEX - PAGE_SIZE / 2))
+    if [ $start_index -lt 0 ]; then
+        start_index=0
+    fi
+
+    local end_index=$((start_index + PAGE_SIZE))
+    if [ $end_index -gt $total ]; then
+        end_index=$total
+        start_index=$((end_index - PAGE_SIZE))
+        if [ $start_index -lt 0 ]; then
+            start_index=0
+        fi
+    fi
+
+    local line_num=$((start_row + 9))
+    local pkg_index=0
+
+    # Display packages
+    if [ $total -gt 0 ]; then
+        while IFS= read -r pkg; do
+            if [ $pkg_index -ge $start_index ] && [ $pkg_index -lt $end_index ]; then
+                tput cup $line_num $start_col
+                if [ $pkg_index -eq $SELECTED_INDEX ]; then
+                    tput setaf 0; tput setab 2
+                    printf "  ➤ %-76s  " "$pkg"
+                    tput sgr0
+                else
+                    printf "    %-76s  " "$pkg"
+                fi
+                ((line_num++))
+            fi
+            ((pkg_index++))
+            [ $pkg_index -ge $end_index ] && break
+        done <<< "$filtered"
+    fi
+
+    # Fill remaining lines
+    while [ $line_num -lt $((start_row + 9 + PAGE_SIZE)) ]; do
+        tput cup $line_num $start_col
+        printf "%80s" ""
+        ((line_num++))
+    done
+
+    # Show position
+    tput cup $((start_row + 9 + PAGE_SIZE + 1)) $start_col
+    if [ $total -gt 0 ]; then
+        printf "  [%d/%d]" $((SELECTED_INDEX + 1)) "$total"
+    else
+        printf "  No packages found. Start typing to search..."
+    fi
+}
+
+# Install package
+install_package() {
+    local pkg=$1
+
+    if [ -z "$pkg" ]; then
+        return
+    fi
+
+    clear
+    tput cnorm 2>/dev/null
+
+    echo "════════════════════════════════════════════════════════════════════════════════"
+    echo "Installing: $pkg"
+    echo "════════════════════════════════════════════════════════════════════════════════"
+    echo ""
+
+    case $PKG_MGR in
+        pacman)
+            sudo pacman -S "$pkg"
+            ;;
+        apt)
+            sudo apt install "$pkg"
+            ;;
+        dnf|yum)
+            sudo $PKG_MGR install "$pkg"
+            ;;
+        zypper)
+            sudo zypper install "$pkg"
+            ;;
+    esac
+
+    local status=$?
+    echo ""
+    echo "════════════════════════════════════════════════════════════════════════════════"
+    if [ $status -eq 0 ]; then
+        echo "✓ Successfully installed: $pkg"
+    else
+        echo "✗ Failed to install: $pkg"
+    fi
+    echo "════════════════════════════════════════════════════════════════════════════════"
+    echo ""
+    read -p "Press Enter to continue..."
+
+    tput civis 2>/dev/null
+}
+
+# Main interactive loop
+interactive_search() {
+    tput civis 2>/dev/null
+
+    # Initial draw
+    draw_interface
+
+    while true; do
+        # Read one character
+        IFS= read -rsn1 key
+
+        case "$key" in
+            $'\x1b')  # ESC sequence
+                # Try to read arrow key sequence
+                read -rsn1 -t 0.01 seq1 2>/dev/null
+                read -rsn1 -t 0.01 seq2 2>/dev/null
+
+                if [ "$seq1" = "[" ]; then
+                    case "$seq2" in
+                        A)  # Up arrow
+                            if [ $SELECTED_INDEX -gt 0 ]; then
+                                ((SELECTED_INDEX--))
+                                draw_interface
+                            fi
+                            ;;
+                        B)  # Down arrow
+                            local filtered=$(get_filtered_packages "$SEARCH_TERM")
+                            local total=$(echo "$filtered" | grep -c "^" 2>/dev/null || echo 0)
+                            if [ $total -gt 0 ] && [ $SELECTED_INDEX -lt $((total - 1)) ]; then
+                                ((SELECTED_INDEX++))
+                                draw_interface
+                            fi
+                            ;;
+                    esac
+                else
+                    # Just ESC - exit
+                    return
+                fi
+                ;;
+            'q'|'Q')
+                return
+                ;;
+            $'\x7f')  # Backspace
+                if [ ${#SEARCH_TERM} -gt 0 ]; then
+                    SEARCH_TERM="${SEARCH_TERM%?}"
+                    SELECTED_INDEX=0
+                    draw_interface
+                fi
+                ;;
+            '')  # Enter
+                local filtered=$(get_filtered_packages "$SEARCH_TERM")
+                local total=$(echo "$filtered" | grep -c "^" 2>/dev/null || echo 0)
+                if [ $total -gt 0 ]; then
+                    local pkg=$(echo "$filtered" | sed -n "$((SELECTED_INDEX + 1))p")
+                    if [ -n "$pkg" ]; then
+                        install_package "$pkg"
+                        draw_interface
+                    fi
+                fi
+                ;;
+            *)  # Regular character
+                if [[ "$key" =~ ^[[:print:]]$ ]]; then
+                    SEARCH_TERM="${SEARCH_TERM}${key}"
+                    SELECTED_INDEX=0
+                    draw_interface
+                fi
+                ;;
+        esac
+    done
+}
+
+# Main function
+main() {
+    clear
+    echo "Loading packages from $PKG_MGR..."
+    echo "This may take a moment..."
+
+    get_all_packages > "$ALL_PACKAGES"
+
+    local total=$(wc -l < "$ALL_PACKAGES")
+
+    if [ $total -eq 0 ]; then
+        echo "Error: No packages found!"
+        exit 1
+    fi
+
+    clear
+    echo "Loaded $total packages!"
+    echo "Starting package manager..."
+    sleep 1
+
+    interactive_search
+}
+
+main
+echo "Thank you for using Package Manager!"
